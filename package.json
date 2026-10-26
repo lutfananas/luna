@@ -1,0 +1,10 @@
+{
+  "name": "luna-trading-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dashboard trading crypto pribadi: chart, script mirip Pine Script, backtest, bar replay",
+  "scripts": {
+    "test": "node tests/run-tests.js",
+    "start": "python3 -m http.server 8000"
+  }
+}
