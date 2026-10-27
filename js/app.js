@@ -1275,11 +1275,9 @@
     renderPicker();
     if (!picker.list || Date.now() - picker.loadedAt > 60e3) {
       $('sym-info').textContent = 'Memuat daftar koin dari Binance…';
-      const r = await Data.fetchSymbols();
-      picker.list = r.list;
-      picker.live = r.live;
-      picker.loadedAt = r.live ? Date.now() : 0;
+      await ensureSymbols(60e3);
       renderPicker();
+      renderWatch(true);
     }
   }
   function closePicker() {
@@ -1333,6 +1331,7 @@
     if (!sym) return;
     settings.symbol = sym;
     $('symbol-label').textContent = sym;
+    renderWatch(true);
     loadBinance();
   }
 
@@ -1363,11 +1362,133 @@
       if (favs.has(s)) favs.delete(s); else favs.add(s);
       store.set('favorites', [...favs]);
       renderPicker();
+      renderWatch(true);
+      startWatchStream();
       return;
     }
     const row = e.target.closest('.sym-row[data-k]');
     if (row) chooseSymbol(picker.rows[+row.dataset.k].symbol);
   });
+
+  // ------------------------------------------------------------------
+  // Watchlist: favorit + 100 koin USDT teratas (volume 24 jam), klik untuk membuka chart
+  // ------------------------------------------------------------------
+  const STABLES = new Set(['USDC', 'FDUSD', 'TUSD', 'DAI', 'USDP', 'BUSD', 'EUR', 'AEUR', 'EURI', 'USDE', 'PYUSD', 'XUSD', 'BFUSD', 'USD1', 'RLUSD', 'UST', 'USTC', 'PAXG']);
+  const watch = { stop: null, streamKey: '', lastRender: 0, timer: null, prev: new Map(), loading: false };
+
+  async function ensureSymbols(maxAge) {
+    if (picker.list && picker.live && Date.now() - picker.loadedAt < maxAge) return;
+    const r = await Data.fetchSymbols();
+    picker.list = r.list;
+    picker.live = r.live;
+    picker.loadedAt = r.live ? Date.now() : 0;
+  }
+
+  function watchData() {
+    const all = picker.list || [];
+    const bySym = new Map(all.map((x) => [x.symbol, x]));
+    const top = all.filter((x) => x.quote === 'USDT' && !STABLES.has(x.base))
+      .sort((a, b) => (b.quoteVolume || 0) - (a.quoteVolume || 0)).slice(0, 100);
+    const fav = [...favs].map((sym) => bySym.get(sym) || Object.assign({ symbol: sym, price: NaN, change: NaN, quoteVolume: NaN }, Data.splitSymbol(sym)));
+    return { top, fav };
+  }
+
+  async function loadWatch(force) {
+    if (watch.loading) return;
+    watch.loading = true;
+    $('watch-info').textContent = 'Memuat daftar koin…';
+    try {
+      await ensureSymbols(force ? 0 : 5 * 60e3);
+    } finally {
+      watch.loading = false;
+    }
+    renderWatch(true);
+    startWatchStream();
+  }
+
+  // harga realtime hanya untuk koin yang tampil di watchlist
+  function startWatchStream() {
+    if (!picker.live) return;
+    const { top, fav } = watchData();
+    const syms = [...new Set([...fav.map((x) => x.symbol), ...top.map((x) => x.symbol)])].sort();
+    const key = syms.join(',');
+    if (key === watch.streamKey && watch.stop) return;
+    if (watch.stop) watch.stop();
+    watch.streamKey = key;
+    const bySym = new Map((picker.list || []).map((x) => [x.symbol, x]));
+    watch.stop = Data.subscribeTickers(syms, (t) => {
+      const x = bySym.get(t.symbol);
+      if (!x) return;
+      x.price = t.price;
+      x.change = t.open ? ((t.price - t.open) / t.open) * 100 : x.change;
+      x.quoteVolume = t.quoteVolume;
+      renderWatch(false);
+    });
+  }
+
+  function watchVisible() {
+    return document.querySelector('[data-pane="watch"]').classList.contains('active') && !document.hidden;
+  }
+
+  function renderWatch(force) {
+    if (!force) {
+      // update realtime dibatasi ±1x per detik dan hanya saat panel terlihat
+      if (!watchVisible()) return;
+      const wait = 1000 - (Date.now() - watch.lastRender);
+      if (wait > 0) {
+        if (!watch.timer) watch.timer = setTimeout(() => { watch.timer = null; renderWatch(false); }, wait);
+        return;
+      }
+    }
+    watch.lastRender = Date.now();
+    const term = $('watch-search').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const match = (x) => !term || x.symbol.includes(term) || x.base.startsWith(term);
+    const { top, fav } = watchData();
+    const row = (x, rank) => {
+      const before = watch.prev.get(x.symbol);
+      const flash = isNa(before) || isNa(x.price) || before === x.price ? '' : x.price > before ? 'flash-up' : 'flash-down';
+      watch.prev.set(x.symbol, x.price);
+      return `<div class="watch-row ${x.symbol === settings.symbol ? 'cur' : ''}" data-sym="${esc(x.symbol)}" title="${esc(x.symbol)} — klik untuk membuka chart">
+        <span class="star ${favs.has(x.symbol) ? 'on' : ''}" data-fav="${esc(x.symbol)}" title="Favorit">★</span>
+        <span>${rank ? `<span class="rank">${rank}</span>` : ''}<b>${esc(x.base)}</b><span class="q">${x.quote && x.quote !== 'USDT' ? '/' + esc(x.quote) : ''}</span></span>
+        <span class="${flash}">${fmtPx(x.price)}</span>
+        <span><span class="chg ${sign(x.change)}">${isNa(x.change) ? '—' : (x.change > 0 ? '+' : '') + x.change.toFixed(2) + '%'}</span></span>
+      </div>`;
+    };
+    const favRows = fav.filter(match);
+    const topRows = top.map((x, k) => [x, k + 1]).filter(([x]) => match(x));
+    let html = '';
+    html += `<div class="watch-section">★ Favorit (${favRows.length})</div>`;
+    html += favRows.length ? favRows.map((x) => row(x)).join('') : `<div class="empty" style="padding:10px">${term ? 'Tidak ada yang cocok.' : 'Klik ★ di daftar bawah untuk menambah favorit.'}</div>`;
+    html += `<div class="watch-section">${picker.live ? 'Top 100 · volume 24 jam' : 'Koin populer'} (${topRows.length})</div>`;
+    html += topRows.map(([x, k]) => row(x, picker.live ? k : null)).join('');
+    if (!picker.live) html += (picker.list || []).filter((x) => !top.includes(x) && match(x)).map((x) => row(x)).join('');
+    const box = $('watch-list');
+    const scroll = box.scrollTop;
+    box.innerHTML = html;
+    box.scrollTop = scroll;
+    $('watch-info').textContent = !picker.list ? 'Memuat…'
+      : picker.live ? 'Harga realtime dari Binance · klik koin untuk membuka chart · ★ = favorit'
+        : 'Binance tidak terjangkau — daftar koin populer tanpa harga. Klik ↻ untuk mencoba lagi.';
+  }
+
+  $('watch-list').addEventListener('click', (e) => {
+    const star = e.target.closest('[data-fav]');
+    if (star) {
+      const sym = star.dataset.fav;
+      if (favs.has(sym)) favs.delete(sym); else favs.add(sym);
+      store.set('favorites', [...favs]);
+      renderWatch(true);
+      startWatchStream();
+      return;
+    }
+    const r = e.target.closest('.watch-row[data-sym]');
+    if (r && r.dataset.sym !== settings.symbol) chooseSymbol(r.dataset.sym);
+  });
+  $('watch-search').addEventListener('input', () => renderWatch(true));
+  $('watch-refresh').onclick = () => loadWatch(true);
+  document.querySelector('[data-tabs="side"] [data-tab="watch"]').addEventListener('click', () => renderWatch(true));
+  setInterval(() => { if (watchVisible()) loadWatch(false); }, 5 * 60e3); // segarkan peringkat top 100
 
   document.addEventListener('keydown', (e) => {
     const tag = (e.target.tagName || '').toLowerCase();
@@ -1397,6 +1518,7 @@
   renderGutter();
   $('btn-live').disabled = true;
   loadBinance();
+  loadWatch(false);
 
   // untuk debugging dari console browser
   window.Luna = { S, chart, runAll, setBars };

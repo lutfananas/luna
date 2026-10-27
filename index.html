@@ -117,12 +117,23 @@
 
     <aside class="sidebar">
       <nav class="tabs" data-tabs="side">
-        <button data-tab="scripts" class="active">Script</button>
+        <button data-tab="watch" class="active">★ Koin</button>
+        <button data-tab="scripts">Script</button>
         <button data-tab="editor">Editor</button>
         <button data-tab="help">Bantuan</button>
       </nav>
       <div class="tab-body">
-        <div data-pane="scripts" class="pane active">
+        <div data-pane="watch" class="pane watch-pane active">
+          <div class="watch-head">
+            <input id="watch-search" type="text" placeholder="Filter koin…" spellcheck="false" autocomplete="off" />
+            <button id="watch-refresh" class="icon" title="Muat ulang daftar">↻</button>
+          </div>
+          <div class="watch-row watch-header"><span></span><span>Koin</span><span>Harga</span><span>24j</span></div>
+          <div id="watch-list" class="watch-list"></div>
+          <div id="watch-info" class="watch-info muted"></div>
+        </div>
+
+        <div data-pane="scripts" class="pane">
           <div class="toolbar">
             <button id="btn-new-ind">+ Indikator</button>
             <button id="btn-new-strat">+ Strategi</button>
@@ -153,7 +164,7 @@
         <div data-pane="help" class="pane help">
           <h3>Cara pakai</h3>
           <ol>
-            <li>Klik tombol simbol (atau tekan <kbd>/</kbd>) untuk memilih koin dari semua pair Binance, lalu pilih timeframe.</li>
+            <li>Klik koin di tab <b>★ Koin</b> (favorit + top 100), atau klik tombol simbol / tekan <kbd>/</kbd> untuk mencari dari semua pair Binance. Pilih timeframe.</li>
             <li>Centang script di tab <b>Script</b> untuk menampilkannya di chart. Klik ⚙ untuk ubah input.</li>
             <li>Buat / ubah script di tab <b>Editor</b> dengan sintaks mirip Pine Script v5.</li>
             <li>Script <code>strategy(...)</code> otomatis di-backtest → lihat panel <b>Strategy Tester</b>.</li>

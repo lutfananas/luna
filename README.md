@@ -2,6 +2,7 @@
 
 Dashboard trading pribadi ala TradingView yang berjalan sepenuhnya di browser Anda:
 
+- **Watchlist ★ Koin** di sidebar: favorit + 100 koin USDT teratas (volume 24 jam) dengan harga realtime — klik untuk membuka chart.
 - **Chart candlestick** data Binance (pemilih koin dengan pencarian & favorit untuk semua pair spot, timeframe 1m–1w, sampai 20.000 bar) + update **live** via WebSocket.
 - **Script mirip Pine Script v5** — tulis indikator & strategi sendiri, tambahkan sesuka hati, ubah input lewat ⚙.
 - **Backtest otomatis** untuk setiap `strategy(...)`: net profit, win rate, profit factor, max drawdown, kurva equity vs buy & hold, daftar trade.

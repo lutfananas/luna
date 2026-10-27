@@ -185,7 +185,40 @@
     }
   }
 
-  const api = { fetchBinance, fetchSymbols, splitSymbol, subscribe, parseCSV, demo, INTERVAL_MS, QUOTES };
+  /**
+   * Harga realtime untuk sekumpulan simbol (satu koneksi WebSocket gabungan).
+   * onTick({symbol, price, open, quoteVolume}) dipanggil untuk tiap update. Mengembalikan fungsi stop.
+   */
+  function subscribeTickers(symbols, onTick, onStatus) {
+    const streams = symbols.slice(0, 200).map((x) => x.toLowerCase() + '@miniTicker').join('/');
+    if (!streams) return () => {};
+    let ws = null;
+    let stopped = false;
+    let attempt = 0;
+    const bases = WS.map((w) => w.replace(/\/ws$/, ''));
+    const connect = () => {
+      if (stopped) return;
+      ws = new WebSocket(`${bases[attempt % bases.length]}/stream?streams=${streams}`);
+      ws.onopen = () => { attempt = 0; onStatus && onStatus('live'); };
+      ws.onmessage = (ev) => {
+        const m = JSON.parse(ev.data);
+        const d = m.data || m;
+        if (!d || !d.s) return;
+        onTick({ symbol: d.s, price: +d.c, open: +d.o, quoteVolume: +d.q });
+      };
+      ws.onclose = () => {
+        if (stopped) return;
+        onStatus && onStatus('reconnect');
+        attempt++;
+        setTimeout(connect, Math.min(30000, 2000 * attempt));
+      };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    return () => { stopped = true; if (ws) ws.close(); };
+  }
+
+  const api = { fetchBinance, fetchSymbols, subscribeTickers, splitSymbol, subscribe, parseCSV, demo, INTERVAL_MS, QUOTES };
   root.LunaData = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
