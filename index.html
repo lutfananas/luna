@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Luna Trading Dashboard</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">🌙 Luna</div>
+
+    <div class="group">
+      <input id="symbol" list="symbols" value="BTCUSDT" spellcheck="false" title="Simbol Binance, mis. BTCUSDT" />
+      <datalist id="symbols">
+        <option>BTCUSDT</option><option>ETHUSDT</option><option>BNBUSDT</option><option>SOLUSDT</option>
+        <option>XRPUSDT</option><option>DOGEUSDT</option><option>ADAUSDT</option><option>AVAXUSDT</option>
+        <option>LINKUSDT</option><option>DOTUSDT</option><option>TONUSDT</option><option>SUIUSDT</option>
+        <option>PEPEUSDT</option><option>LTCUSDT</option><option>TRXUSDT</option><option>NEARUSDT</option>
+      </datalist>
+      <div id="tfs" class="seg"></div>
+      <select id="barcount" title="Jumlah candle yang dimuat">
+        <option value="1000">1.000 bar</option>
+        <option value="3000" selected>3.000 bar</option>
+        <option value="5000">5.000 bar</option>
+        <option value="10000">10.000 bar</option>
+        <option value="20000">20.000 bar</option>
+      </select>
+      <button id="btn-load" class="primary">Muat</button>
+      <button id="btn-live" title="Update realtime via WebSocket">● Live</button>
+      <label class="btn" title="Impor data dari file CSV (time,open,high,low,close,volume)">
+        CSV <input id="csv-file" type="file" accept=".csv,.txt" hidden />
+      </label>
+      <button id="btn-demo" title="Data acak untuk mencoba tanpa internet">Demo</button>
+    </div>
+
+    <div class="group replay-group">
+      <button id="btn-replay" title="Bar Replay (R)">⏪ Replay</button>
+      <div id="replay-controls" class="seg hidden">
+        <button id="rp-pick" title="Pilih titik mulai di chart">📍</button>
+        <input id="rp-date" type="datetime-local" title="Lompat ke tanggal" />
+        <button id="rp-back" title="Mundur 1 bar (←)">⏮</button>
+        <button id="rp-play" title="Play / Pause (Spasi)">▶</button>
+        <button id="rp-step" title="Maju 1 bar (→)">⏭</button>
+        <select id="rp-speed" title="Kecepatan">
+          <option value="1000">1x</option>
+          <option value="500" selected>2x</option>
+          <option value="250">4x</option>
+          <option value="100">10x</option>
+          <option value="30">30x</option>
+        </select>
+        <button id="rp-exit" title="Keluar dari replay">✕</button>
+      </div>
+    </div>
+
+    <div id="status" class="status"></div>
+  </header>
+
+  <main class="layout">
+    <section class="center">
+      <div class="chart-wrap">
+        <div id="chart"></div>
+        <div id="legend" class="legend"></div>
+        <div id="pine-tables" class="pine-tables-host"></div>
+        <div id="replay-hint" class="replay-hint hidden">
+          <div>Klik di chart untuk memilih titik mulai replay</div>
+          <small>atau isi tanggal di toolbar · Esc untuk batal</small>
+        </div>
+      </div>
+
+      <div id="resizer" class="resizer" title="Geser untuk mengubah tinggi panel"></div>
+
+      <section id="bottom" class="bottom">
+        <nav class="tabs" data-tabs="bottom">
+          <button data-tab="tester" class="active">Strategy Tester</button>
+          <button data-tab="trades">Daftar Trade</button>
+          <button data-tab="paper">Replay Trading</button>
+          <button data-tab="log">Log <span id="log-badge" class="badge hidden"></span></button>
+          <span class="spacer"></span>
+          <select id="strategy-select" class="hidden" title="Pilih strategi"></select>
+          <button id="btn-collapse" class="icon" title="Sembunyikan panel">▾</button>
+        </nav>
+        <div class="tab-body">
+          <div data-pane="tester" class="pane active">
+            <div id="tester-empty" class="empty">Aktifkan script <b>strategy(...)</b> untuk melihat hasil backtest.</div>
+            <div id="tester" class="tester hidden">
+              <div id="metrics" class="metrics"></div>
+              <div class="equity-wrap">
+                <div class="equity-title">Kurva Equity <span id="replay-note" class="muted"></span></div>
+                <div id="equity-chart"></div>
+              </div>
+            </div>
+          </div>
+          <div data-pane="trades" class="pane">
+            <div class="table-wrap"><table id="trades-table" class="table"></table></div>
+          </div>
+          <div data-pane="paper" class="pane">
+            <div id="paper-off" class="empty">Masuk ke mode <b>⏪ Replay</b> untuk latihan trading manual (paper trading) bar demi bar.</div>
+            <div id="paper" class="paper hidden">
+              <div class="paper-controls">
+                <label>Modal awal <input id="pp-capital" type="number" value="10000" min="1" /></label>
+                <label>Nominal / order (USDT) <input id="pp-amount" type="number" value="1000" min="0" /></label>
+                <label>Fee % <input id="pp-fee" type="number" value="0.1" step="0.01" min="0" /></label>
+                <label>Stop Loss <input id="pp-sl" type="number" step="any" placeholder="harga" /></label>
+                <label>Take Profit <input id="pp-tp" type="number" step="any" placeholder="harga" /></label>
+                <div class="paper-buttons">
+                  <button id="pp-buy" class="buy" title="B">BUY</button>
+                  <button id="pp-sell" class="sell" title="S">SELL</button>
+                  <button id="pp-close" title="C">Tutup Posisi</button>
+                  <button id="pp-reset" class="ghost">Reset</button>
+                </div>
+              </div>
+              <div id="pp-stats" class="metrics small"></div>
+              <div class="table-wrap"><table id="pp-table" class="table"></table></div>
+            </div>
+          </div>
+          <div data-pane="log" class="pane">
+            <pre id="log" class="log"></pre>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <aside class="sidebar">
+      <nav class="tabs" data-tabs="side">
+        <button data-tab="scripts" class="active">Script</button>
+        <button data-tab="editor">Editor</button>
+        <button data-tab="help">Bantuan</button>
+      </nav>
+      <div class="tab-body">
+        <div data-pane="scripts" class="pane active">
+          <div class="toolbar">
+            <button id="btn-new-ind">+ Indikator</button>
+            <button id="btn-new-strat">+ Strategi</button>
+            <label class="btn" title="Impor file .pine / .txt / .json">Impor<input id="import-file" type="file" accept=".pine,.txt,.json" hidden /></label>
+            <button id="btn-export" title="Simpan semua script ke file JSON">Ekspor</button>
+          </div>
+          <ul id="script-list" class="script-list"></ul>
+          <div class="toolbar foot">
+            <button id="btn-reset-examples" class="ghost">Tambahkan ulang contoh bawaan</button>
+          </div>
+        </div>
+
+        <div data-pane="editor" class="pane editor-pane">
+          <div class="editor-head">
+            <span id="editor-title" class="muted">Pilih script untuk diedit, atau buat baru.</span>
+          </div>
+          <div class="editor">
+            <pre id="gutter" class="gutter"></pre>
+            <textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea>
+          </div>
+          <div id="editor-error" class="editor-error hidden"></div>
+          <div class="toolbar">
+            <button id="btn-save" class="primary" title="Ctrl+Enter / Ctrl+S">Simpan &amp; Terapkan</button>
+            <button id="btn-save-new" title="Simpan sebagai script baru">Simpan sebagai baru</button>
+          </div>
+        </div>
+
+        <div data-pane="help" class="pane help">
+          <h3>Cara pakai</h3>
+          <ol>
+            <li>Ketik simbol (mis. <code>ETHUSDT</code>), pilih timeframe, klik <b>Muat</b>.</li>
+            <li>Centang script di tab <b>Script</b> untuk menampilkannya di chart. Klik ⚙ untuk ubah input.</li>
+            <li>Buat / ubah script di tab <b>Editor</b> dengan sintaks mirip Pine Script v5.</li>
+            <li>Script <code>strategy(...)</code> otomatis di-backtest → lihat panel <b>Strategy Tester</b>.</li>
+            <li><b>⏪ Replay</b>: klik titik di chart, lalu ▶ / → untuk maju bar demi bar. Hasil backtest &amp; paper trading mengikuti posisi replay.</li>
+          </ol>
+          <h3>Shortcut</h3>
+          <p><kbd>R</kbd> replay · <kbd>Spasi</kbd> play/pause · <kbd>→</kbd>/<kbd>←</kbd> maju/mundur · <kbd>B</kbd>/<kbd>S</kbd>/<kbd>C</kbd> buy/sell/tutup (saat replay) · <kbd>Ctrl+Enter</kbd> simpan script</p>
+          <h3>Yang didukung</h3>
+          <ul class="compact">
+            <li><b>Sintaks</b>: <code>x = …</code>, <code>var x = …</code>, <code>x := …</code>, <code>+=</code>, <code>if / else if / else</code>, <code>switch</code>, <code>x = if …</code> / <code>x = switch …</code>, <code>for i = a to b by s</code>, <code>for x in arr</code>, <code>while</code>, <code>break/continue</code>, ternary <code>?:</code>, <code>and/or/not</code>, histori <code>close[1]</code>, tuple <code>[a, b] = …</code>, fungsi <code>f(x) =&gt; …</code>, method <code>arr.push(x)</code>, tipe <code>float/int/array&lt;float&gt;/…</code>, argumen bernama.</li>
+            <li><b>Timeframe lain (HTF)</b>: <code>timeframe.change("1D")</code>, <code>timeframe.in_seconds()</code>, <code>request.security(sym, "240", high[1])</code> untuk open/high/low/close/volume (tanpa repaint jika lookahead off).</li>
+            <li><b>Gambar</b>: <code>box.new/line.new/label.new/table.new</code> + <code>set_*</code>, <code>get_*</code>, <code>delete</code>, <code>.all</code> — mengikuti posisi replay.</li>
+            <li><b>array.</b>: new_float/int/bool/string/box/line, new&lt;T&gt;, from, push, pop, shift, unshift, get, set, size, remove, insert, includes, indexof, max, min, sum, avg, median, stdev, sort, slice, copy, join, …</li>
+            <li><b>Deklarasi</b>: <code>indicator()</code>, <code>strategy()</code> (initial_capital, default_qty_type, default_qty_value, commission_type, commission_value, pyramiding, slippage, process_orders_on_close)</li>
+            <li><b>Input</b>: <code>input.int/float/bool/string/source/color</code></li>
+            <li><b>ta.</b>: sma ema rma wma hma vwma swma stdev variance dev rsi macd bb bbw kc atr tr supertrend highest lowest highestbars lowestbars crossover crossunder cross change mom roc cum vwap obv stoch cci mfi dmi barssince valuewhen rising falling pivothigh pivotlow linreg median percentrank wpr sar</li>
+            <li><b>math.</b>: abs max min round sqrt pow log exp floor ceil sign avg …, <code>na() nz()</code>, <b>str.</b>tostring</li>
+            <li><b>Plot</b>: <code>plot</code> (line, linebr, stepline, histogram, columns, area, circles), <code>plotshape</code>, <code>plotchar</code>, <code>plotarrow</code>, <code>hline</code>, <code>bgcolor</code>, <code>barcolor</code>, <code>color.new/rgb/from_gradient</code></li>
+            <li><b>strategy.</b>: entry, exit (stop, limit, profit, loss), close, close_all, cancel, cancel_all, position_size, position_avg_price, equity, netprofit, openprofit, closedtrades …</li>
+          </ul>
+          <h3>Belum didukung</h3>
+          <p class="muted"><code>request.security</code> dengan ekspresi kompleks (dihitung di timeframe chart + peringatan di Log), <code>type</code>/<code>method</code> buatan sendiri, <code>map/matrix</code>, <code>linefill</code>, trailing stop, partial exit, histori variabel lokal di dalam fungsi.</p>
+          <h3>Aturan eksekusi backtest</h3>
+          <p class="muted">Seperti TradingView: order market diisi di <b>open bar berikutnya</b>. Stop/limit dicek di dalam bar (open → high/low terdekat → sisi lain → close). Posisi bersih; entry berlawanan = reversal.</p>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="js/vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="js/ta.js"></script>
+  <script src="js/backtest.js"></script>
+  <script src="js/pine-ext.js"></script>
+  <script src="js/pine.js"></script>
+  <script src="js/draw-layer.js"></script>
+  <script src="js/scripts-crt.js"></script>
+  <script src="js/scripts.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
