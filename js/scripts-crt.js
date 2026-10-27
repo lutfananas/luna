@@ -9,14 +9,17 @@
   function build(isStrategy) {
     // versi strategy: visual minimal agar tidak dobel saat dipakai bersama indikatornya
     const vis = isStrategy ? 'false' : 'true';
+    // default strategy hasil tuning ENAUSDT 15m (tools/tune-crt.js); indikator tetap memakai default umum
+    const defModel = isStrategy ? '"CISD"' : 'S_ALL';
+    const defKZ = isStrategy ? 'true' : 'false';
     const header = isStrategy
       ? 'strategy("SATTAM | CRT+TBS Strategy", overlay = true, initial_capital = 1000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, commission_value = 0.1, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)'
       : 'indicator("SATTAM | CRT+TBS", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)';
 
     const strategyInputs = isStrategy ? String.raw`
 g7 = "⑦  Strategy"
-targetMode = input.string(S_T2, "Take Profit", options = [S_T1, S_T2, S_RR], group = g7)
-tpR        = input.float(1.0, "Fixed R Multiple", minval = 0.2, step = 0.1, group = g7, tooltip = "Dipakai jika Take Profit = Fixed R: TP = entry ± R × jarak stop.")
+targetMode = input.string(S_RR, "Take Profit", options = [S_T1, S_T2, S_RR], group = g7)
+tpR        = input.float(0.6, "Fixed R Multiple", minval = 0.2, step = 0.1, group = g7, tooltip = "Dipakai jika Take Profit = Fixed R: TP = entry ± R × jarak stop.")
 allowLong  = input.bool(true, "Allow Long", group = g7)
 allowShort = input.bool(true, "Allow Short", group = g7)
 riskPct    = input.float(1.0, "Risk per Trade (% equity)", minval = 0.1, maxval = 100, step = 0.1, group = g7, tooltip = "Ukuran posisi = risiko / jarak stop, dibatasi 100% equity (tanpa leverage).")
@@ -95,7 +98,7 @@ klShowOB   = input.bool(false, "OB  Order Block", group = g3)
 klShowFVG  = input.bool(false, "FVG  Fair Value Gap", group = g3)
 
 g4 = "④  TBS & Entry Models"
-entryModel   = input.string(S_ALL, "Entry Model", options = [S_ALL, "Model #1", "CISD", "MSS+FVG"], group = g4)
+entryModel   = input.string(${defModel}, "Entry Model", options = [S_ALL, "Model #1", "CISD", "MSS+FVG"], group = g4)
 tbsPivotLen  = input.int(3, "TBS Liquidity Pivot Length", minval = 1, maxval = 15, group = g4)
 tbsRequire   = input.bool(false, "Require TBS on the Sweep", group = g4)
 confirmClose = input.bool(true, "Confirmed Bars Only", group = g4)
@@ -105,7 +108,7 @@ minStopATR   = input.float(0.5, "Min Stop Distance (× ATR)", minval = 0.0, step
 
 g5 = "⑤  Filters"
 useBias  = input.bool(false, "Trade With Daily Bias Only", group = g5)
-useTime  = input.bool(false, "Kill Zones Only (New York time)", group = g5)
+useTime  = input.bool(${defKZ}, "Kill Zones Only (New York time)", group = g5)
 dstMode  = input.string(S_AUTO, "Daylight Saving", options = [S_AUTO, S_WINTER, S_SUMMER], group = g5)
 kzLondon = input.bool(true, "London 02:00–05:00", group = g5)
 kzNyAm   = input.bool(true, "NY AM 07:00–10:00", group = g5)

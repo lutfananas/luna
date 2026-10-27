@@ -260,9 +260,10 @@ console.log('SATTAM CRT+TBS');
     for (let k = 0; k < 30; k++) { p *= 1 + (rnd() - 0.5) * 0.003; h = Math.max(h, p); l = Math.min(l, p); }
     rwBars.push({ time: Date.UTC(2024, 0, 1) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 100 });
   }
-  const runOn = (src, b) => Pine.run(Pine.compile(src), b, { timeframe: '1h' });
+  const runOn = (src, b, inputs) => Pine.run(Pine.compile(src), b, { timeframe: '1h', inputs });
   const ind = runOn(CRT.indicator, rwBars);
-  const st = runOn(CRT.strategy, rwBars);
+  // default strategy sudah di-tuning (sangat selektif); uji mesin trade dengan filter longgar
+  const st = runOn(CRT.strategy, rwBars, { 'Entry Model': 'All', 'Kill Zones Only (New York time)': false });
   ok(!ind.error && !st.error, 'indikator & strategy jalan ' + (ind.error || st.error || ''));
   const sigs = (r, upto) => r.drawings.label.filter((l) => /^(SELL|BUY)/.test(l.props.text) && l.created < upto).map((l) => l.created + ':' + l.props.text);
   ok(sigs(ind, 1e9).length > 5, `sinyal muncul (${sigs(ind, 1e9).length})`);
