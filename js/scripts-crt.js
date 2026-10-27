@@ -15,7 +15,8 @@
 
     const strategyInputs = isStrategy ? String.raw`
 g7 = "⑦  Strategy"
-targetMode = input.string(S_T2, "Take Profit", options = [S_T1, S_T2], group = g7)
+targetMode = input.string(S_T2, "Take Profit", options = [S_T1, S_T2, S_RR], group = g7)
+tpR        = input.float(1.0, "Fixed R Multiple", minval = 0.2, step = 0.1, group = g7, tooltip = "Dipakai jika Take Profit = Fixed R: TP = entry ± R × jarak stop.")
 allowLong  = input.bool(true, "Allow Long", group = g7)
 allowShort = input.bool(true, "Allow Short", group = g7)
 riskPct    = input.float(1.0, "Risk per Trade (% equity)", minval = 0.1, maxval = 100, step = 0.1, group = g7, tooltip = "Ukuran posisi = risiko / jarak stop, dibatasi 100% equity (tanpa leverage).")
@@ -27,10 +28,10 @@ riskQty(stop) =>
     math.min(strategy.equity * riskPct / 100 / math.abs(close - stop), strategy.equity / close)
 if sigBear and allowShort and strategy.position_size == 0
     strategy.entry("CRT S", strategy.short, qty = riskQty(bearStop))
-    strategy.exit("XS", "CRT S", stop = bearStop, limit = targetMode == S_T1 ? bearT1 : bearT2)
+    strategy.exit("XS", "CRT S", stop = bearStop, limit = targetMode == S_RR ? close - tpR * (bearStop - close) : targetMode == S_T1 ? bearT1 : bearT2)
 if sigBull and allowLong and strategy.position_size == 0
     strategy.entry("CRT L", strategy.long, qty = riskQty(bullStop))
-    strategy.exit("XL", "CRT L", stop = bullStop, limit = targetMode == S_T1 ? bullT1 : bullT2)
+    strategy.exit("XL", "CRT L", stop = bullStop, limit = targetMode == S_RR ? close + tpR * (close - bullStop) : targetMode == S_T1 ? bullT1 : bullT2)
 ` : '';
 
     return String.raw`//@version=6
@@ -67,6 +68,7 @@ S_BOT_R  = "Bottom Right"
 S_BOT_L  = "Bottom Left"
 S_T1     = "T1 (50% Range)"
 S_T2     = "T2 (Opposite Extreme)"
+S_RR     = "Fixed R"
 
 g1 = "①  Higher Timeframe"
 htfMode   = input.string(S_AUTO, "HTF Mode", options = [S_AUTO, S_MANUAL], group = g1, tooltip = "Auto = tabel pasangan timeframe: MN→1D · 1W→4H · 1D→1H · 4H→5M · 1H→1M")
