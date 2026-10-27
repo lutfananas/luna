@@ -8,6 +8,7 @@ Dashboard trading pribadi ala TradingView yang berjalan sepenuhnya di browser An
 - **Bar Replay** — mundur ke titik mana pun lalu putar ulang candle satu per satu (▶, →, ←, kecepatan 1x–30x). Hasil backtest ikut menyesuaikan posisi replay.
 - **Paper trading manual saat replay** — BUY / SELL / Tutup + Stop Loss / Take Profit, dengan statistik P&L sendiri.
 - Data juga bisa dari **file CSV** sendiri, atau **data Demo** (offline).
+- **SATTAM | CRT+TBS** — indikator Candle Range Theory + Turtle Body Soup (HTF otomatis, key level OB/FVG/OHP/OLP, 3 entry model, daily bias, kill zone, Donchian 2H) beserta versi strategy-nya. Lihat [docs/CRT-TBS.md](docs/CRT-TBS.md).
 - Semua script & pengaturan tersimpan di browser (localStorage). Bisa **ekspor/impor** ke file JSON.
 
 Tidak perlu server, tidak perlu install apa pun, tidak ada data yang dikirim ke mana-mana selain request harga ke Binance.
@@ -52,13 +53,16 @@ Daftar lengkap fungsi yang didukung ada di tab **Bantuan** di dashboard. Ringkas
 
 | Kategori | Didukung |
 |---|---|
-| Sintaks | variabel, `var`, `:=`, `+=`, `if/else if/else`, `for … to … by`, `while`, ternary, `and/or/not`, histori `x[1]`, tuple `[a, b] = …`, fungsi buatan sendiri `f(x) =>` (satu baris & blok), argumen bernama |
+| Sintaks | variabel, `var`, `:=`, `+=`, `if/else if/else`, `switch`, `x = if …`, `for … to … by`, `for x in arr`, `while`, ternary, `and/or/not`, histori `x[1]`, tuple `[a, b] = …`, fungsi `f(x) =>`, method `arr.push(x)`, `array<float>`, argumen bernama |
+| HTF | `timeframe.change("1D")`, `timeframe.in_seconds()`, `request.security(…, "240", high[1])` untuk OHLCV (tanpa repaint) |
+| Gambar | `box.new`, `line.new`, `label.new`, `table.new` + `set_*`/`get_*`/`delete` — ikut posisi Bar Replay |
+| `array.*` | new_float/int/bool/string/box/line, push, pop, shift, get, set, size, remove, max, min, avg, sort, … |
 | `ta.*` | sma, ema, rma, wma, hma, vwma, rsi, macd, bb, kc, atr, supertrend, stoch, cci, mfi, dmi, vwap, obv, highest/lowest, crossover/crossunder, pivothigh/pivotlow, sar, linreg, barssince, valuewhen, dll. |
 | Plot | `plot` (line, stepline, histogram, columns, area, circles), `plotshape`, `plotchar`, `plotarrow`, `hline`, `bgcolor`, `barcolor` |
 | Strategi | `strategy.entry/exit/close/close_all/cancel`, stop & limit, profit/loss (tick), pyramiding, komisi, slippage, `position_size`, `position_avg_price`, `equity`, … |
 | Input | `input.int/float/bool/string/source/color` → bisa diubah dari panel ⚙ |
 
-Belum didukung: `request.security` (memakai data chart), `switch`, `array/map/matrix`, `label/line/box/table` (diabaikan), trailing stop.
+Belum didukung: `request.security` dengan ekspresi kompleks, `type`/`method` buatan sendiri, `map/matrix`, trailing stop, partial exit.
 
 ### Aturan eksekusi backtest
 
@@ -81,6 +85,9 @@ index.html          tampilan
 css/style.css       gaya (tema gelap)
 js/app.js           UI: chart, daftar script, editor, tester, replay, paper trading
 js/pine.js          penerjemah Pine-like → JavaScript + runtime
+js/pine-ext.js      timeframe/HTF, array, objek gambar (box/line/label/table)
+js/draw-layer.js    renderer objek gambar di chart + tabel
+js/scripts-crt.js   SATTAM CRT+TBS (indikator & strategy)
 js/ta.js            library indikator (ta.*)
 js/backtest.js      mesin backtest (strategy.*) + metrik
 js/data.js          Binance REST/WebSocket, CSV, data demo

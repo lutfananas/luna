@@ -12,6 +12,7 @@
 
   const TA = root.LunaTA || (typeof require !== 'undefined' ? require('./ta.js') : null);
   const BT = root.LunaBacktest || (typeof require !== 'undefined' ? require('./backtest.js') : null);
+  const EXT = root.LunaPineExt || (typeof require !== 'undefined' ? require('./pine-ext.js') : null);
 
   class PineError extends Error {
     constructor(msg, line) {
@@ -157,6 +158,16 @@
     'ta.pivothigh': ['source', 'leftbars', 'rightbars'], 'ta.pivotlow': ['source', 'leftbars', 'rightbars'], 'ta.linreg': ['source', 'length', 'offset'],
     'ta.sar': ['start', 'inc', 'max'], 'ta.tr': ['handle_na'], 'ta.vwap': ['source'], 'ta.cum': ['source'], 'ta.wpr': ['length'],
     'math.round': ['number', 'precision'],
+    'box.new': ['left', 'top', 'right', 'bottom', 'border_color', 'border_width', 'border_style', 'extend', 'xloc', 'bgcolor', 'text', 'text_size', 'text_color', 'text_halign', 'text_valign', 'text_wrap', 'text_font_family', 'force_overlay', 'text_formatting'],
+    'line.new': ['x1', 'y1', 'x2', 'y2', 'xloc', 'extend', 'color', 'style', 'width', 'force_overlay'],
+    'label.new': ['x', 'y', 'text', 'xloc', 'yloc', 'color', 'style', 'textcolor', 'size', 'textalign', 'tooltip', 'text_font_family', 'force_overlay', 'text_formatting'],
+    'table.new': ['position', 'columns', 'rows', 'bgcolor', 'frame_color', 'frame_width', 'border_color', 'border_width', 'force_overlay'],
+    'table.cell': ['table_id', 'column', 'row', 'text', 'width', 'height', 'text_color', 'text_halign', 'text_valign', 'text_size', 'bgcolor', 'tooltip', 'text_font_family', 'text_formatting'],
+    'timeframe.change': ['timeframe'], 'timeframe.in_seconds': ['timeframe'],
+    'array.new_float': ['size', 'initial_value'], 'array.new_int': ['size', 'initial_value'], 'array.new_bool': ['size', 'initial_value'],
+    'array.new_string': ['size', 'initial_value'], 'array.new_box': ['size', 'initial_value'], 'array.new_line': ['size', 'initial_value'],
+    'array.new_label': ['size', 'initial_value'], 'array.new': ['size', 'initial_value'],
+    'str.format_time': ['time', 'format', 'timezone'],
     'str.tostring': ['value', 'format'],
   };
 
@@ -222,6 +233,12 @@
         if (name === 'or') { out += ' || '; i++; continue; }
         if (name === 'not') { out += ' !'; i++; continue; }
         if (name === 'true' || name === 'false') { out += name; i++; continue; }
+        if (nx && nx.t === 'op' && nx.v === '<' && /^(array|map|matrix)\.new$/.test(name) && toks[i + 2] && toks[i + 3] && toks[i + 3].v === '>' && toks[i + 4] && toks[i + 4].v === '(') {
+          const j = this.match(toks, i + 4);
+          out += this.call(name, toks.slice(i + 5, j));
+          i = j + 1;
+          continue;
+        }
         if (nx && nx.t === 'op' && nx.v === '(') {
           const j = this.match(toks, i + 1);
           out += this.call(name, toks.slice(i + 2, j));
@@ -299,8 +316,38 @@
       this.err(`Variabel "${name}" belum dideklarasikan`);
     }
 
+    // request.security: data timeframe lain dibangun dari bar chart (tanpa repaint jika lookahead off)
+    security(raw) {
+      const sig = ['symbol', 'timeframe', 'expression', 'gaps', 'lookahead', 'ignore_invalid_symbol', 'currency', 'calc_bars_count'];
+      const args = [];
+      raw.forEach((a, k) => {
+        if (a.length >= 2 && a[0].t === 'id' && a[1].t === 'op' && a[1].v === '=') args[sig.indexOf(a[0].v)] = a.slice(2);
+        else args[k] = a;
+      });
+      if (!args[1] || !args[2]) this.err('request.security() membutuhkan timeframe dan ekspresi');
+      const tf = this.expr(args[1]);
+      const la = args[4] ? this.expr(args[4]) : 'undefined';
+      const conv = (tk) => {
+        if (tk.length === 1 && tk[0].t === 'id' && SERIES.has(tk[0].v)) return `$.htf(${tf}, '${tk[0].v}', 0, ${la})`;
+        if (tk.length >= 4 && tk[0].t === 'id' && SERIES.has(tk[0].v) && tk[1].v === '[' && tk[tk.length - 1].v === ']' && this.match(tk, 1) === tk.length - 1) {
+          return `$.htf(${tf}, '${tk[0].v}', ${this.expr(tk.slice(2, -1))}, ${la})`;
+        }
+        return null;
+      };
+      const e = args[2];
+      if (e[0].t === 'op' && e[0].v === '[' && this.match(e, 0) === e.length - 1) {
+        const parts = this.splitArgs(e.slice(1, -1)).map(conv);
+        if (parts.every((x) => x)) return `[${parts.join(', ')}]`;
+      } else {
+        const c = conv(e);
+        if (c) return c;
+      }
+      return `$.securityFallback(${this.expr(e)})`;
+    }
+
     call(name, argToks) {
       const raw = argToks.length ? this.splitArgs(argToks) : [];
+      if (name === 'request.security' || name === 'security') return this.security(raw);
       const pos = [];
       const named = {};
       for (const a of raw) {
@@ -310,6 +357,15 @@
         } else {
           if (Object.keys(named).length) this.err('Argumen posisi tidak boleh setelah argumen bernama');
           pos.push(this.expr(a));
+        }
+      }
+      // pemanggilan method: obj.metode(...), mis. arr.push(x) atau myBox.set_right(bar_index)
+      const dot = name.indexOf('.');
+      if (dot > 0) {
+        const rootName = name.slice(0, dot);
+        if (!NS.has(rootName) && (this.isLocal(rootName) || this.globals.has(rootName))) {
+          if (Object.keys(named).length) this.err(`Argumen bernama belum didukung untuk method .${name.slice(dot + 1)}()`);
+          return `$.method(${JSON.stringify(name.slice(dot + 1))}, ${this.ident(rootName)}${pos.length ? ', ' + pos.join(', ') : ''})`;
         }
       }
       let sig = SIGS[name];
@@ -355,13 +411,23 @@
     compile(src) {
       const lines = logicalLines(src);
       const out = [];
-      const stack = []; // {indent, kind, scope?, lastExpr?}
+      // frame: {indent, kind, scope?, returns?, lastExpr?, subject?, armCount?}
+      // `returns` = ekspresi terakhir di blok ini menjadi nilai kembali (badan fungsi, cabang if/switch ekspresi)
+      const stack = [];
+      let swCount = 0;
+      const finishReturn = (f) => {
+        if (f.returns && f.lastExpr) out[f.lastExpr.idx] = `$.L=${f.lastExpr.line}; return ${f.lastExpr.js};`;
+      };
       const closeFrame = (f) => {
+        finishReturn(f);
         if (f.kind === 'func') {
-          if (f.lastExpr) out[f.lastExpr.idx] = `$.L=${f.lastExpr.line}; return ${f.lastExpr.js};`;
           out.push('};');
           this.funcDepth--;
           this.scopes.pop();
+        } else if (f.kind === 'iife') {
+          out.push('return NaN; })();');
+        } else if (f.kind === 'switch') {
+          // cabang switch sudah ditutup masing-masing
         } else {
           out.push('}');
           if (f.scope) this.scopes.pop();
@@ -371,6 +437,16 @@
         for (let k = stack.length - 1; k >= 0; k--) if (stack[k].kind === 'func') return stack[k];
         return null;
       };
+      const topLevelIndex = (toks, v) => {
+        let d = 0;
+        for (let k = 0; k < toks.length; k++) {
+          const t = toks[k];
+          if (t.t === 'op' && (t.v === '(' || t.v === '[')) d++;
+          else if (t.t === 'op' && (t.v === ')' || t.v === ']')) d--;
+          else if (d === 0 && t.v === v) return k;
+        }
+        return -1;
+      };
 
       for (let li = 0; li < lines.length; li++) {
         const L = lines[li];
@@ -378,11 +454,16 @@
         const toks = L.tokens;
         const first = toks[0];
         const isElse = first.t === 'id' && first.v === 'else';
+        let elseReturns = false;
+        let elseOk = false;
         while (stack.length && L.indent <= stack[stack.length - 1].indent) {
           const f = stack[stack.length - 1];
           if (isElse && f.kind === 'if' && L.indent === f.indent) {
             stack.pop();
+            finishReturn(f);
             out.push('}');
+            elseReturns = !!f.returns;
+            elseOk = true;
             break;
           }
           stack.pop();
@@ -390,31 +471,82 @@
         }
         const fn = curFunc();
         const parentFrame = stack[stack.length - 1];
-        // reset kandidat return jika statement berada langsung di badan fungsi
-        const directInFunc = fn && parentFrame === fn;
+        const retFrame = parentFrame && parentFrame.returns ? parentFrame : null;
+        if (retFrame) retFrame.lastExpr = null;
         const tag = `$.L=${L.line}; `;
         const opensBlock = (kind, extra) => {
           const nextL = lines[li + 1];
           if (!nextL || nextL.indent <= L.indent) this.err(`Blok "${kind}" kosong — baris berikutnya harus diindentasi`);
           stack.push(Object.assign({ indent: L.indent, kind }, extra || {}));
         };
-        if (directInFunc) fn.lastExpr = null;
+        const declTarget = (name, isVar) => {
+          if (fn) {
+            this.scopes[this.scopes.length - 1].add(name);
+            return `let v_${name} = `;
+          }
+          if (this.isLocal(name)) this.err(`"${name}" sudah dipakai sebagai variabel loop`);
+          this.globals.add(name);
+          const key = JSON.stringify(name);
+          return isVar ? `if (!(${key} in $s)) $s[${key}] = ` : `$s[${key}] = `;
+        };
+        // `x = if ...` / `x = switch ...` → fungsi anonim yang langsung dipanggil
+        const openExprBlock = (prefix, rhs) => {
+          out.push(`${tag}${prefix}(() => {`);
+          stack.push({ indent: L.indent, kind: 'iife' });
+          if (rhs[0].v === 'if') {
+            out.push(`if (${this.expr(rhs.slice(1))}) {`);
+            opensBlock('if', { returns: true });
+          } else {
+            const subject = this.openSwitchSubject(rhs.slice(1), () => ++swCount, out);
+            opensBlock('switch', { subject, armCount: 0, returns: true });
+          }
+        };
+        const isBlockExpr = (rhs) => rhs[0] && rhs[0].t === 'id' && (rhs[0].v === 'if' || rhs[0].v === 'switch');
+
+        // cabang switch:  nilai => hasil   |   => default
+        if (parentFrame && parentFrame.kind === 'switch') {
+          const sw = parentFrame;
+          const ai = topLevelIndex(toks, '=>');
+          if (ai < 0) this.err('Cabang switch harus berformat:  nilai => hasil');
+          const left = toks.slice(0, ai);
+          const right = toks.slice(ai + 1);
+          const cond = left.length ? (sw.subject ? `${sw.subject} === (${this.expr(left)})` : `(${this.expr(left)})`) : null;
+          const kw = sw.armCount++ === 0 ? '' : 'else ';
+          const head = cond ? `${kw}if (${cond})` : kw ? 'else' : '';
+          if (right.length) {
+            let body;
+            if (sw.returns) body = `return (${this.expr(right)});`;
+            else if (right[0].t === 'id' && right[1] && right[1].t === 'op' && (right[1].v === ':=' || /^[+\-*/%]=$/.test(right[1].v))) {
+              body = `${this.ident(right[0].v)} ${right[1].v === ':=' ? '=' : right[1].v} ${this.expr(right.slice(2))};`;
+            } else body = this.expr(right) + ';';
+            out.push(`${head} { ${tag}${body} }`);
+          } else {
+            out.push(`${head} {`);
+            opensBlock('arm', { returns: !!sw.returns });
+          }
+          continue;
+        }
 
         // else / else if
         if (isElse) {
-          if (out[out.length - 1] !== '}') this.err('"else" tanpa "if"');
+          if (!elseOk) this.err('"else" tanpa "if"');
           if (toks[1] && toks[1].v === 'if') {
             out.push(`else if (${this.expr(toks.slice(2))}) {`);
           } else {
             if (toks.length > 1) this.err('Sintaks "else" tidak valid');
             out.push('else {');
           }
-          opensBlock('if');
+          opensBlock('if', { returns: elseReturns });
           continue;
         }
         if (first.t === 'id' && first.v === 'if') {
           out.push(`${tag}if (${this.expr(toks.slice(1))}) {`);
           opensBlock('if');
+          continue;
+        }
+        if (first.t === 'id' && first.v === 'switch') {
+          const subject = this.openSwitchSubject(toks.slice(1), () => ++swCount, out, tag);
+          opensBlock('switch', { subject, armCount: 0, returns: false });
           continue;
         }
         if (first.t === 'id' && first.v === 'while') {
@@ -423,10 +555,25 @@
           continue;
         }
         if (first.t === 'id' && first.v === 'for') {
-          if (!(toks[1] && toks[1].t === 'id' && toks[2] && toks[2].v === '=')) {
-            if (toks[2] && toks[2].v === 'in') this.err('"for ... in" belum didukung');
-            this.err('Format: for i = awal to akhir [by langkah]');
+          // for x in arr  |  for [i, x] in arr
+          const inIdx = topLevelIndex(toks, 'in');
+          if (inIdx > 0) {
+            const head = toks.slice(1, inIdx);
+            const arr = this.expr(toks.slice(inIdx + 1));
+            let names;
+            if (head.length === 1 && head[0].t === 'id') {
+              names = [head[0].v];
+              out.push(`${tag}for (const v_${names[0]} of $.iter(${arr})) {`);
+            } else if (head[0].v === '[') {
+              names = this.splitArgs(head.slice(1, -1)).map((a) => a[0].v);
+              if (names.length !== 2) this.err('Format: for [i, x] in array');
+              out.push(`${tag}for (const [v_${names[0]}, v_${names[1]}] of $.iter(${arr}).entries()) {`);
+            } else this.err('Format: for x in array');
+            this.scopes.push(new Set(names));
+            opensBlock('for', { scope: true });
+            continue;
           }
+          if (!(toks[1] && toks[1].t === 'id' && toks[2] && toks[2].v === '=')) this.err('Format: for i = awal to akhir [by langkah]');
           const rest = toks.slice(3);
           let d = 0, toIdx = -1, byIdx = -1;
           rest.forEach((t, k) => {
@@ -449,7 +596,9 @@
           out.push(first.v + ';');
           continue;
         }
-        if (first.t === 'id' && first.v === 'switch') this.err('"switch" belum didukung, gunakan if / else if');
+        if (first.t === 'id' && ['type', 'method', 'export', 'import', 'enum'].includes(first.v) && toks[1] && toks[1].t === 'id') {
+          this.err(`"${first.v}" belum didukung di Luna`);
+        }
 
         // definisi fungsi: nama(a, b) => ...
         if (first.t === 'id' && !first.v.includes('.') && toks[1] && toks[1].v === '(') {
@@ -459,8 +608,7 @@
             const params = [];
             const defs = [];
             for (const p of this.splitArgs(toks.slice(2, j))) {
-              let k = 0;
-              while (p[k] && p[k].t === 'id' && TYPES.has(p[k].v) && p[k + 1] && p[k + 1].t === 'id') k++;
+              let k = this.skipType(p, 0);
               if (!p[k] || p[k].t !== 'id') this.err('Parameter fungsi tidak valid');
               params.push(p[k].v);
               defs.push(p[k + 1] && p[k + 1].v === '=' ? this.expr(p.slice(k + 2)) : null);
@@ -478,7 +626,7 @@
               this.funcDepth--;
             } else {
               out.push(`${tag}$u[${JSON.stringify(name)}] = function(__site${plist ? ', ' + plist : ''}) {`);
-              opensBlock('func');
+              opensBlock('func', { returns: true });
             }
             continue;
           }
@@ -490,16 +638,21 @@
           const op = toks[j + 1];
           if (op && (op.v === '=' || op.v === ':=')) {
             const names = this.splitArgs(toks.slice(1, j)).map((a) => {
-              if (a.length !== 1 || a[0].t !== 'id') this.err('Deklarasi tuple tidak valid');
-              return a[0].v;
+              const k = this.skipType(a, 0);
+              if (a.length !== k + 1 || a[k].t !== 'id') this.err('Deklarasi tuple tidak valid');
+              return a[k].v;
             });
-            const rhs = this.expr(toks.slice(j + 2));
+            const rhsToks = toks.slice(j + 2);
             if (fn) {
               if (op.v === '=') names.forEach((n) => this.scopes[this.scopes.length - 1].add(n));
-              out.push(`${tag}${op.v === '=' ? 'let ' : ''}[${names.map((n) => 'v_' + n).join(', ')}] = ${rhs};`);
+              const target = `${op.v === '=' ? 'let ' : ''}[${names.map((n) => 'v_' + n).join(', ')}] = `;
+              if (isBlockExpr(rhsToks)) openExprBlock(target, rhsToks);
+              else out.push(`${tag}${target}${this.expr(rhsToks)};`);
             } else {
               if (op.v === '=') names.forEach((n) => this.globals.add(n));
-              out.push(`${tag}[${names.map((n) => this.ident(n)).join(', ')}] = ${rhs};`);
+              const target = `[${names.map((n) => this.ident(n)).join(', ')}] = `;
+              if (isBlockExpr(rhsToks)) openExprBlock(target, rhsToks);
+              else out.push(`${tag}${target}${this.expr(rhsToks)};`);
             }
             continue;
           }
@@ -510,28 +663,19 @@
           let k = 0;
           let isVar = false;
           if (toks[k] && toks[k].t === 'id' && (toks[k].v === 'var' || toks[k].v === 'varip')) { isVar = true; k++; }
-          while (toks[k] && toks[k].t === 'id' && TYPES.has(toks[k].v) && toks[k + 1] && toks[k + 1].t === 'id' && !(toks[k + 1].v === 'and' || toks[k + 1].v === 'or')) {
-            // lompati tipe, termasuk generic sederhana seperti array<float> tidak didukung
-            k++;
-          }
+          k = this.skipType(toks, k);
           const nameTok = toks[k];
           const eq = toks[k + 1];
           if (nameTok && nameTok.t === 'id' && !nameTok.v.includes('.') && eq && eq.t === 'op' && eq.v === '=') {
             const name = nameTok.v;
             if (SERIES.has(name)) this.err(`"${name}" adalah variabel bawaan dan tidak bisa dideklarasikan ulang`);
             const rhsToks = toks.slice(k + 2);
-            if (rhsToks[0] && rhsToks[0].t === 'id' && (rhsToks[0].v === 'if' || rhsToks[0].v === 'switch')) this.err(`"${rhsToks[0].v}" sebagai ekspresi belum didukung — deklarasikan variabel dulu lalu isi dengan ":=" di dalam if`);
-            if (fn) {
-              const rhs = this.expr(rhsToks);
-              this.scopes[this.scopes.length - 1].add(name);
-              out.push(`${tag}let v_${name} = ${rhs};`);
+            if (!rhsToks.length) this.err(`Nilai untuk "${name}" kosong`);
+            if (isBlockExpr(rhsToks)) {
+              openExprBlock(declTarget(name, isVar), rhsToks);
             } else {
-              const loopLocal = this.isLocal(name);
-              if (loopLocal) this.err(`"${name}" sudah dipakai sebagai variabel loop`);
               const rhs = this.expr(rhsToks);
-              this.globals.add(name);
-              const key = JSON.stringify(name);
-              out.push(isVar ? `${tag}if (!(${key} in $s)) $s[${key}] = ${rhs};` : `${tag}$s[${key}] = ${rhs};`);
+              out.push(`${tag}${declTarget(name, isVar)}${rhs};`);
             }
             continue;
           }
@@ -542,17 +686,46 @@
           const name = first.v;
           if (!this.isLocal(name) && !this.globals.has(name)) this.err(`Variabel "${name}" belum dideklarasikan (gunakan "=" untuk deklarasi pertama)`);
           const op = toks[1].v === ':=' ? '=' : toks[1].v;
-          out.push(`${tag}${this.ident(name)} ${op} ${this.expr(toks.slice(2))};`);
+          const rhsToks = toks.slice(2);
+          if (op === '=' && isBlockExpr(rhsToks)) openExprBlock(`${this.ident(name)} = `, rhsToks);
+          else out.push(`${tag}${this.ident(name)} ${op} ${this.expr(rhsToks)};`);
           continue;
         }
 
         // statement ekspresi
         const js = this.expr(toks);
         out.push(`${tag}${js};`);
-        if (directInFunc) fn.lastExpr = { idx: out.length - 1, js, line: L.line };
+        if (retFrame) retFrame.lastExpr = { idx: out.length - 1, js, line: L.line };
       }
       while (stack.length) closeFrame(stack.pop());
       return out.join('\n');
+    }
+
+    openSwitchSubject(subjToks, nextId, out, tag) {
+      if (!subjToks.length) return null;
+      const name = `$sw${nextId()}`;
+      out.push(`${tag || ''}const ${name} = ${this.expr(subjToks)};`);
+      return name;
+    }
+
+    // lompati penanda tipe: float, var int, array<float>, map<string, float>, series float, ...
+    skipType(toks, k) {
+      for (;;) {
+        const t = toks[k];
+        if (!t || t.t !== 'id') return k;
+        if (/^(array|map|matrix)$/.test(t.v) && toks[k + 1] && toks[k + 1].v === '<') {
+          let j = k + 1;
+          while (toks[j] && toks[j].v !== '>') j++;
+          if (!toks[j]) this.err('Tipe generik tidak ditutup dengan ">"');
+          k = j + 1;
+          continue;
+        }
+        if ((TYPES.has(t.v) || t.v === 'chart.point') && toks[k + 1] && toks[k + 1].t === 'id' && !['and', 'or', 'not'].includes(toks[k + 1].v)) {
+          k++;
+          continue;
+        }
+        return k;
+      }
     }
   }
 
@@ -653,7 +826,7 @@
     const $u = {};
     const result = {
       decl: { type: 'indicator', title: 'Script', overlay: false },
-      plots: [], shapes: [], hlines: [], bgcolors: [], barcolors: null, inputs: [], strategy: null, error: null,
+      plots: [], shapes: [], hlines: [], bgcolors: [], barcolors: null, inputs: [], strategy: null, error: null, warnings: [], drawings: null,
     };
     const plotMap = new Map(), shapeMap = new Map(), hlineMap = new Map(), bgMap = new Map(), inputMap = new Map();
     let i = 0;
@@ -754,6 +927,18 @@
     };
 
     const noop = () => null;
+    const extCtx = { i: () => i, bars, tf: opts.timeframe, limits: { box: 50, line: 50, label: 50 } };
+    const TF = EXT.makeTimeframe(extCtx);
+    const ARR = EXT.makeArray();
+    const DRAW = EXT.makeDrawings(extCtx);
+    result.drawings = DRAW.store;
+    const warnOnce = new Set();
+    const warn = (msg) => { if (!warnOnce.has(msg)) { warnOnce.add(msg); result.warnings.push(msg); } };
+    const setLimits = (l, lb, b) => {
+      if (!isNa(l)) extCtx.limits.line = Math.min(500, l);
+      if (!isNa(lb)) extCtx.limits.label = Math.min(500, lb);
+      if (!isNa(b)) extCtx.limits.box = Math.min(500, b);
+    };
     const objNoop = new Proxy({}, { get: () => noop });
     const d = () => new Date(R.time);
 
@@ -766,7 +951,13 @@
         tostring: (v, f) => {
           if (typeof v !== 'number') return String(v);
           if (Number.isNaN(v)) return 'NaN';
+          if (f === 'mintick' || f === 'price') {
+            const d = Math.max(0, Math.round(-Math.log10(broker.cfg.mintick)));
+            return v.toFixed(d);
+          }
+          if (f === 'volume') return Math.abs(v) >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : Math.abs(v) >= 1e3 ? (v / 1e3).toFixed(2) + 'K' : v.toFixed(2);
           if (f === 'percent') return v.toFixed(2) + '%';
+          if (typeof f === 'string' && /^[#0]+$/.test(f)) return String(Math.round(v));
           if (typeof f === 'string' && f.includes('.')) return v.toFixed(f.split('.')[1].length);
           return String(+v.toFixed(8));
         },
@@ -777,20 +968,53 @@
         lower: (s) => String(s).toLowerCase(),
         format: (f, ...a) => String(f).replace(/\{(\d+)(?:,[^}]*)?\}/g, (m, k) => a[+k]),
         replace_all: (s, a, b) => String(s).split(a).join(b),
+        replace: (s, a, b) => String(s).replace(a, b),
+        split: (s, sep) => String(s).split(sep),
+        substring: (s, a, b) => String(s).substring(a, b),
+        startswith: (s, x) => String(s).startsWith(x),
+        endswith: (s, x) => String(s).endsWith(x),
+        pos: (s, x) => { const k = String(s).indexOf(x); return k < 0 ? NaN : k; },
+        trim: (s) => String(s).trim(),
+        repeat: (s, n, sep) => new Array(Math.max(0, n)).fill(s).join(sep || ''),
+        format_time: (t, fmt) => {
+          const d = new Date(t);
+          const p = (x) => String(x).padStart(2, '0');
+          return String(fmt || 'yyyy-MM-dd HH:mm').replace('yyyy', d.getUTCFullYear()).replace('MM', p(d.getUTCMonth() + 1)).replace('dd', p(d.getUTCDate()))
+            .replace('HH', p(d.getUTCHours())).replace('mm', p(d.getUTCMinutes())).replace('ss', p(d.getUTCSeconds()));
+        },
       },
       shape: { xcross: 'xcross', cross: 'cross', circle: 'circle', triangleup: 'triangleup', triangledown: 'triangledown', flag: 'flag', arrowup: 'arrowup', arrowdown: 'arrowdown', labelup: 'labelup', labeldown: 'labeldown', square: 'square', diamond: 'diamond' },
       location: { abovebar: 'abovebar', belowbar: 'belowbar', top: 'top', bottom: 'bottom', absolute: 'absolute' },
       size: { auto: 'auto', tiny: 'tiny', small: 'small', normal: 'normal', large: 'large', huge: 'huge' },
       display: { all: 'all', none: 'none', pane: 'pane', data_window: 'data_window', price_scale: 'price_scale', status_line: 'status_line' },
-      position: {}, extend: {}, xloc: {}, yloc: {}, text: {}, font: {}, format: { price: 'price', volume: 'volume', percent: 'percent', mintick: 'mintick', inherit: 'inherit' },
-      scale: { right: 'right', left: 'left', none: 'none' }, currency: {}, barmerge: {}, session: {}, order: {},
-      label: objNoop, line: objNoop, box: objNoop, table: objNoop, linefill: objNoop, array: objNoop, log: objNoop, runtime: { error: (m) => { throw new PineError(m, $.L); } },
+      position: {}, extend: { none: 'none', right: 'right', left: 'left', both: 'both' },
+      xloc: { bar_index: 'bar_index', bar_time: 'bar_time' }, yloc: { price: 'price', abovebar: 'abovebar', belowbar: 'belowbar' },
+      text: { align_left: 'left', align_center: 'center', align_right: 'right', align_top: 'top', align_bottom: 'bottom', wrap_auto: 'auto', wrap_none: 'none', format_bold: 'bold', format_italic: 'italic', format_none: 'none' },
+      font: { family_default: 'default', family_monospace: 'monospace' }, format: { price: 'price', volume: 'volume', percent: 'percent', mintick: 'mintick', inherit: 'inherit' },
+      scale: { right: 'right', left: 'left', none: 'none' }, currency: {}, barmerge: {}, session: {},
+      label: DRAW.label, line: DRAW.line, box: DRAW.box, table: DRAW.table, chart: DRAW.chart, linefill: objNoop, array: ARR, log: objNoop,
+      order: { ascending: 'ascending', descending: 'descending' },
+      htf: TF.htf,
+      securityFallback: (v) => {
+        warn('request.security() dengan ekspresi kompleks belum didukung: dihitung di timeframe chart. Gunakan open/high/low/close/volume (boleh dengan [n]) atau timeframe.change().');
+        return v;
+      },
+      iter: (a) => (Array.isArray(a) ? a : []),
+      method: (m, o, ...a) => {
+        let ns = null;
+        if (Array.isArray(o)) ns = ARR;
+        else if (o && typeof o === 'object' && o.__kind) ns = DRAW[o.__kind];
+        else if (typeof o === 'string') ns = $.str;
+        else if (isNa(o)) return NaN; // method pada objek na (mis. b.delete()) diabaikan, seperti Pine
+        if (!ns || typeof ns[m] !== 'function') throw new Error(`Method .${m}() tidak dikenal`);
+        return ns[m](o, ...a);
+      }, runtime: { error: (m) => { throw new PineError(m, $.L); } },
       request: {
         security: (sym, tf, expr) => expr,
       },
       barstate: {},
       syminfo: { ticker: opts.symbol || '', tickerid: opts.symbol || '', mintick: broker.cfg.mintick, currency: 'USDT', basecurrency: '', type: 'crypto', timezone: 'UTC' },
-      timeframe: { period: opts.timeframe || '', isintraday: true, isdaily: false, isweekly: false, ismonthly: false, multiplier: 1 },
+      timeframe: TF.timeframe,
       dayofweek: { sunday: 1, monday: 2, tuesday: 3, wednesday: 4, thursday: 5, friday: 6, saturday: 7 },
       t: {
         year: () => d().getUTCFullYear(), month: () => d().getUTCMonth() + 1, dayofmonth: () => d().getUTCDate(),
@@ -821,12 +1045,15 @@
         if (++guardCount > 2e6) throw new PineError('Loop terlalu lama (kemungkinan loop tak berujung)', $.L);
         return true;
       },
-      indicator: (title, shorttitle, overlay) => {
-        if (i === 0) result.decl = { type: 'indicator', title: title || 'Indikator', overlay: !!overlay };
+      indicator: (title, shorttitle, overlay, format, precision, scale, mbb, tf, tfg, zorder, maxLines, maxLabels, maxBoxes) => {
+        if (i !== 0) return;
+        result.decl = { type: 'indicator', title: title || 'Indikator', overlay: !!overlay };
+        setLimits(maxLines, maxLabels, maxBoxes);
       },
       study: (title, shorttitle, overlay) => $.indicator(title, shorttitle, overlay),
-      strategyDecl: (title, shorttitle, overlay, format, precision, scale, pyramiding, cooF, cEveryTick, mbb, bfla, qtyType, qtyValue, capital, currency, slippage, commType, commValue, pooc) => {
+      strategyDecl: (title, shorttitle, overlay, format, precision, scale, pyramiding, cooF, cEveryTick, mbb, bfla, qtyType, qtyValue, capital, currency, slippage, commType, commValue, pooc, cer, ml, ms, zorder, maxLines, maxLabels, maxBoxes) => {
         if (i !== 0) return;
+        setLimits(maxLines, maxLabels, maxBoxes);
         isStrategy = true;
         result.decl = { type: 'strategy', title: title || 'Strategy', overlay: !!overlay };
         broker.configure({
@@ -898,7 +1125,11 @@
     $.plot.style_histogram = 'histogram'; $.plot.style_columns = 'columns'; $.plot.style_area = 'area'; $.plot.style_areabr = 'area';
     $.plot.style_circles = 'circles'; $.plot.style_cross = 'circles';
     $.hline.style_solid = 'solid'; $.hline.style_dashed = 'dashed'; $.hline.style_dotted = 'dotted';
-    Object.assign($.position, { top_left: 'top_left', top_right: 'top_right', bottom_left: 'bottom_left', bottom_right: 'bottom_right', middle_center: 'middle_center' });
+    Object.assign($.position, {
+      top_left: 'top_left', top_center: 'top_center', top_right: 'top_right', middle_left: 'middle_left', middle_center: 'middle_center',
+      middle_right: 'middle_right', bottom_left: 'bottom_left', bottom_center: 'bottom_center', bottom_right: 'bottom_right',
+    });
+    Object.assign($.barmerge, { lookahead_on: 'on', lookahead_off: 'off', gaps_on: 'gaps_on', gaps_off: 'gaps_off' });
     Object.defineProperties($.barstate, {
       isfirst: { get: () => i === 0 },
       islast: { get: () => i === n - 1 },

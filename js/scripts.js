@@ -4,6 +4,7 @@
 
   const EXAMPLES = [
     {
+      key: 'ema-cross',
       name: 'EMA Cross Strategy',
       enabled: true,
       code: `//@version=5
@@ -25,6 +26,7 @@ if ta.crossunder(fast, slow)
 `,
     },
     {
+      key: 'rsi',
       name: 'RSI',
       enabled: true,
       code: `//@version=5
@@ -44,6 +46,7 @@ bgcolor(r > ob ? color.new(color.red, 85) : r < os ? color.new(color.green, 85) 
 `,
     },
     {
+      key: 'macd',
       name: 'MACD',
       enabled: false,
       code: `//@version=5
@@ -63,6 +66,7 @@ hline(0, "Nol", color=color.gray)
 `,
     },
     {
+      key: 'bb',
       name: 'Bollinger Bands',
       enabled: false,
       code: `//@version=5
@@ -80,6 +84,7 @@ plotshape(ta.crossover(close, upper), "Tembus atas", shape.triangledown, locatio
 `,
     },
     {
+      key: 'supertrend',
       name: 'Supertrend Strategy',
       enabled: false,
       code: `//@version=5
@@ -103,6 +108,7 @@ if ta.change(dir) > 0
 `,
     },
     {
+      key: 'rsi-sltp',
       name: 'RSI Reversal + SL/TP',
       enabled: false,
       code: `//@version=5
@@ -130,6 +136,7 @@ if strategy.position_size > 0
 `,
     },
     {
+      key: 'fn-var',
       name: 'Contoh: fungsi & var',
       enabled: false,
       code: `//@version=5
@@ -158,6 +165,16 @@ barcolor(naikBeruntun >= 4 ? color.lime : na)
     },
   ];
 
+  const CRT = root.LunaCRT || (typeof require !== 'undefined' ? require('./scripts-crt.js') : null);
+  if (CRT) {
+    EXAMPLES.push(
+      { key: 'crt-ind', name: 'SATTAM | CRT+TBS', enabled: true, code: CRT.indicator },
+      { key: 'crt-strat', name: 'SATTAM | CRT+TBS Strategy', enabled: false, code: CRT.strategy },
+    );
+  }
+  // contoh yang sudah ada sejak versi pertama (untuk migrasi data lama)
+  const ORIGINAL_KEYS = ['ema-cross', 'rsi', 'macd', 'bb', 'supertrend', 'rsi-sltp', 'fn-var'];
+
   const TEMPLATE_INDICATOR = `//@version=5
 indicator("Indikator Baru", overlay=true)
 
@@ -179,7 +196,7 @@ if ta.crossunder(close, ma)
     strategy.close("Long")
 `;
 
-  const api = { EXAMPLES, TEMPLATE_INDICATOR, TEMPLATE_STRATEGY };
+  const api = { EXAMPLES, ORIGINAL_KEYS, TEMPLATE_INDICATOR, TEMPLATE_STRATEGY };
   root.LunaScripts = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

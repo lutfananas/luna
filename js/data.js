@@ -123,22 +123,30 @@
     return bars.filter((b, i) => i === 0 || b.time !== bars[i - 1].time);
   }
 
-  /** Data acak (random walk) untuk mencoba dashboard tanpa internet. */
+  /**
+   * Data acak (random walk) untuk mencoba dashboard tanpa internet.
+   * Tiap candle dibangun dari 30 langkah kecil sehingga high/low konsisten dengan
+   * jalur harga (wick tidak dibuat-buat) — hasil backtest di data ini mendekati impas.
+   */
   function demo(n, interval) {
     const step = INTERVAL_MS[interval] || 3600e3;
     const now = Math.floor(Date.now() / step) * step;
+    const scale = Math.sqrt(step / 3600e3); // volatilitas mengikuti timeframe
     let p = 60000;
     let vol = 0.006;
     const bars = [];
     for (let i = 0; i < n; i++) {
       vol = Math.max(0.002, Math.min(0.02, vol * (1 + (Math.random() - 0.5) * 0.2)));
-      const drift = Math.sin(i / 400) * 0.0006;
       const o = p;
-      const c = o * (1 + drift + (Math.random() - 0.5) * 2 * vol);
-      const h = Math.max(o, c) * (1 + Math.random() * vol * 0.7);
-      const l = Math.min(o, c) * (1 - Math.random() * vol * 0.7);
-      bars.push({ time: now - (n - 1 - i) * step, open: +o.toFixed(2), high: +h.toFixed(2), low: +l.toFixed(2), close: +c.toFixed(2), volume: +(50 + Math.random() * 200).toFixed(3) });
-      p = c;
+      let h = p, l = p;
+      const sub = 30;
+      const sd = (vol * scale) / Math.sqrt(sub);
+      for (let k = 0; k < sub; k++) {
+        p *= 1 + (Math.random() - 0.5) * 3.46 * sd;
+        if (p > h) h = p;
+        if (p < l) l = p;
+      }
+      bars.push({ time: now - (n - 1 - i) * step, open: +o.toFixed(2), high: +h.toFixed(2), low: +l.toFixed(2), close: +p.toFixed(2), volume: +(50 + Math.random() * 200).toFixed(3) });
     }
     return bars;
   }

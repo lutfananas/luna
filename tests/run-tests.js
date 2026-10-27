@@ -2,6 +2,7 @@
 'use strict';
 globalThis.LunaTA = require('../js/ta.js');
 globalThis.LunaBacktest = require('../js/backtest.js');
+globalThis.LunaPineExt = require('../js/pine-ext.js');
 const Pine = require('../js/pine.js');
 const { EXAMPLES } = require('../js/scripts.js');
 
@@ -29,7 +30,7 @@ function makeBars(n, seed = 7) {
   return bars;
 }
 const bars = makeBars(600);
-const run = (src, inputs) => Pine.run(Pine.compile(src), bars, { inputs });
+const run = (src, inputs, tf = '1h') => Pine.run(Pine.compile(src), bars, { inputs, timeframe: tf });
 
 console.log('Contoh bawaan');
 for (const ex of EXAMPLES) {
@@ -144,6 +145,133 @@ if bar_index == 12
   const t = r.strategy.trades[0];
   const exp = t.exitPrice - t.entryPrice - 0.001 * (t.entryPrice + t.exitPrice);
   ok(near(t.pnl, exp), 'komisi dihitung');
+}
+
+
+console.log('switch, if-ekspresi, for-in, array, method');
+{
+  const r = run(`indicator("t")
+mode = input.string("b", "Mode")
+v = switch mode
+    "a" => 1
+    "b" => 2
+    => 3
+w = if close > open
+    10
+else
+    -10
+k = switch
+    close > open => 1
+    => 0
+var arr = array.new_float()
+arr.push(close)
+if arr.size() > 3
+    arr.shift()
+total = 0.0
+for x in arr
+    total += x
+cnt = 0
+for [i, x] in arr
+    cnt += i
+s = 0
+switch mode
+    "b" =>
+        s := 5
+    => s := 7
+array<float> ga = array.new<float>(2, 1.5)
+plot(v)
+plot(w)
+plot(total)
+plot(cnt)
+plot(s)
+plot(array.sum(ga))
+plot(k)`);
+  ok(!r.error, 'kompilasi & jalan ' + (r.error || ''));
+  ok(r.plots[0].values[5] === 2, 'switch dengan subjek');
+  ok(r.plots[1].values[10] === (bars[10].close > bars[10].open ? 10 : -10), 'if sebagai ekspresi');
+  ok(near(r.plots[2].values[50], bars[48].close + bars[49].close + bars[50].close), 'array + method push/shift/size + for-in');
+  ok(r.plots[3].values[50] === 3, 'for [i, x] in array');
+  ok(r.plots[4].values[5] === 5, 'switch sebagai statement dengan blok');
+  ok(r.plots[5].values[5] === 3, 'array.new<float>(2, 1.5) + tipe generik');
+  ok(r.plots[6].values[10] === (bars[10].close > bars[10].open ? 1 : 0), 'switch tanpa subjek');
+}
+
+console.log('Timeframe & HTF');
+{
+  const r = run(`indicator("t")
+newDay = timeframe.change("D")
+var float dHigh = na
+var float prevDayHigh = na
+if newDay
+    prevDayHigh := dHigh
+    dHigh := high
+else
+    dHigh := math.max(dHigh, high)
+sec = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_on)
+plot(prevDayHigh)
+plot(sec)
+plot(timeframe.in_seconds())
+plot(timeframe.in_seconds("240"))`);
+  ok(!r.error, 'jalan ' + (r.error || ''));
+  const i = 300;
+  const day = Math.floor(bars[i].time / 864e5);
+  const prevDay = bars.filter((b) => Math.floor(b.time / 864e5) === day - 1);
+  const ph = Math.max(...prevDay.map((b) => b.high));
+  ok(near(r.plots[0].values[i], ph), 'high hari sebelumnya via timeframe.change');
+  ok(near(r.plots[1].values[i], ph), 'request.security HTF high[1] (tanpa repaint)');
+  ok(r.plots[2].values[0] === 3600 && r.plots[3].values[0] === 14400, 'timeframe.in_seconds');
+}
+
+console.log('Objek gambar (box/line/label/table) & replay');
+{
+  const r = run(`indicator("t", overlay=true, max_boxes_count=3)
+var box b = na
+if bar_index == 10
+    b := box.new(bar_index, high, bar_index, low, bgcolor=color.new(color.red, 80))
+if bar_index > 10 and bar_index <= 20
+    b.set_right(bar_index)
+if bar_index % 50 == 0
+    box.new(bar_index, high, bar_index + 5, low)
+l = label.new(bar_index, high, "x")
+label.delete(l[1])
+var t = table.new(position.top_right, 2, 2)
+if barstate.islast
+    table.cell(t, 0, 0, "Bias", text_color=color.white)`);
+  ok(!r.error, 'jalan ' + (r.error || ''));
+  const Ext = globalThis.LunaPineExt;
+  const b0 = r.drawings.box.find((x) => x.created === 10);
+  ok(Ext.stateAt(b0, 15).right === 15 && Ext.stateAt(b0, 9) === null && b0.props.right === 20, 'riwayat box per bar (aman untuk replay)');
+  ok(r.drawings.box.filter((x) => x.deleted === null).length === 3, 'batas max_boxes_count menghapus yang paling lama');
+  const visibleLabels = r.drawings.label.filter((x) => Ext.stateAt(x, 100));
+  ok(visibleLabels.length === 1, 'label.delete(l[1]) — hanya label terbaru yang tampil');
+  ok(r.drawings.table[0].props['cell:0:0'].text === 'Bias' && !Ext.stateAt(r.drawings.table[0], 100)['cell:0:0'], 'sel tabel muncul hanya mulai bar terakhir');
+}
+
+
+console.log('SATTAM CRT+TBS');
+{
+  const CRT = require('../js/scripts-crt.js');
+  // random walk dengan jalur intrabar yang konsisten, 1 jam
+  let p = 50000, seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rwBars = [];
+  for (let i = 0; i < 3000; i++) {
+    const o = p; let h = p, l = p;
+    for (let k = 0; k < 30; k++) { p *= 1 + (rnd() - 0.5) * 0.003; h = Math.max(h, p); l = Math.min(l, p); }
+    rwBars.push({ time: Date.UTC(2024, 0, 1) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 100 });
+  }
+  const runOn = (src, b) => Pine.run(Pine.compile(src), b, { timeframe: '1h' });
+  const ind = runOn(CRT.indicator, rwBars);
+  const st = runOn(CRT.strategy, rwBars);
+  ok(!ind.error && !st.error, 'indikator & strategy jalan ' + (ind.error || st.error || ''));
+  const sigs = (r, upto) => r.drawings.label.filter((l) => /^(SELL|BUY)/.test(l.props.text) && l.created < upto).map((l) => l.created + ':' + l.props.text);
+  ok(sigs(ind, 1e9).length > 5, `sinyal muncul (${sigs(ind, 1e9).length})`);
+  ok(st.strategy.trades.length > 5, `strategy menghasilkan trade (${st.strategy.trades.length})`);
+  const K = 2000;
+  const cut = runOn(CRT.indicator, rwBars.slice(0, K));
+  ok(JSON.stringify(sigs(cut, K)) === JSON.stringify(sigs(ind, K)), 'tidak repaint: sinyal sebelum bar K sama dengan/ tanpa data masa depan');
+  const tbl = ind.drawings.table[0];
+  ok(tbl && tbl.props['cell:0:0'].text === 'HTF' && tbl.props['cell:1:0'].text === '1D', 'tabel status + HTF otomatis 1H → 1D');
 }
 
 console.log('Pesan error');

@@ -55,6 +55,19 @@ code, kbd { font-family: var(--mono); font-size: 12px; background: var(--panel-2
 .legend .down { color: var(--red); }
 .legend .ind { color: var(--muted); }
 .legend .ind b { font-weight: 500; }
+.pine-tables-host { position: absolute; inset: 0 70px 28px 0; pointer-events: none; z-index: 3; }
+.pine-tables { position: absolute; display: flex; flex-direction: column; gap: 6px; }
+.pine-tables.pos-top-right { top: 8px; right: 8px; }
+.pine-tables.pos-top-left { top: 60px; left: 10px; }
+.pine-tables.pos-top-center { top: 8px; left: 50%; transform: translateX(-50%); }
+.pine-tables.pos-middle-right { top: 50%; right: 8px; transform: translateY(-50%); }
+.pine-tables.pos-middle-left { top: 50%; left: 10px; transform: translateY(-50%); }
+.pine-tables.pos-middle-center { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.pine-tables.pos-bottom-right { bottom: 8px; right: 8px; }
+.pine-tables.pos-bottom-left { bottom: 8px; left: 10px; }
+.pine-tables.pos-bottom-center { bottom: 8px; left: 50%; transform: translateX(-50%); }
+.pine-table { border-collapse: collapse; background: rgba(30, 34, 45, 0.88); border: 1px solid var(--tb, #2a2e39); border-radius: 4px; font-variant-numeric: tabular-nums; }
+.pine-table td { padding: 3px 8px; border: 1px solid var(--tb, #2a2e39); white-space: nowrap; }
 .replay-hint { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 4; background: rgba(30, 34, 45, 0.92); border: 1px solid var(--yellow); padding: 14px 20px; border-radius: 8px; text-align: center; pointer-events: none; }
 .replay-hint div { color: var(--yellow); font-weight: 600; margin-bottom: 4px; }
 .chart-wrap.picking { cursor: crosshair; }

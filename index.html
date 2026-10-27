@@ -61,6 +61,7 @@
       <div class="chart-wrap">
         <div id="chart"></div>
         <div id="legend" class="legend"></div>
+        <div id="pine-tables" class="pine-tables-host"></div>
         <div id="replay-hint" class="replay-hint hidden">
           <div>Klik di chart untuk memilih titik mulai replay</div>
           <small>atau isi tanggal di toolbar · Esc untuk batal</small>
@@ -168,7 +169,10 @@
           <p><kbd>R</kbd> replay · <kbd>Spasi</kbd> play/pause · <kbd>→</kbd>/<kbd>←</kbd> maju/mundur · <kbd>B</kbd>/<kbd>S</kbd>/<kbd>C</kbd> buy/sell/tutup (saat replay) · <kbd>Ctrl+Enter</kbd> simpan script</p>
           <h3>Yang didukung</h3>
           <ul class="compact">
-            <li><b>Sintaks</b>: <code>x = …</code>, <code>var x = …</code>, <code>x := …</code>, <code>+=</code>, <code>if / else if / else</code>, <code>for i = a to b by s</code>, <code>while</code>, <code>break/continue</code>, ternary <code>?:</code>, <code>and/or/not</code>, histori <code>close[1]</code>, tuple <code>[a, b] = …</code>, fungsi <code>f(x) =&gt; …</code> (satu baris / blok), tipe <code>float/int/bool/…</code>, argumen bernama.</li>
+            <li><b>Sintaks</b>: <code>x = …</code>, <code>var x = …</code>, <code>x := …</code>, <code>+=</code>, <code>if / else if / else</code>, <code>switch</code>, <code>x = if …</code> / <code>x = switch …</code>, <code>for i = a to b by s</code>, <code>for x in arr</code>, <code>while</code>, <code>break/continue</code>, ternary <code>?:</code>, <code>and/or/not</code>, histori <code>close[1]</code>, tuple <code>[a, b] = …</code>, fungsi <code>f(x) =&gt; …</code>, method <code>arr.push(x)</code>, tipe <code>float/int/array&lt;float&gt;/…</code>, argumen bernama.</li>
+            <li><b>Timeframe lain (HTF)</b>: <code>timeframe.change("1D")</code>, <code>timeframe.in_seconds()</code>, <code>request.security(sym, "240", high[1])</code> untuk open/high/low/close/volume (tanpa repaint jika lookahead off).</li>
+            <li><b>Gambar</b>: <code>box.new/line.new/label.new/table.new</code> + <code>set_*</code>, <code>get_*</code>, <code>delete</code>, <code>.all</code> — mengikuti posisi replay.</li>
+            <li><b>array.</b>: new_float/int/bool/string/box/line, new&lt;T&gt;, from, push, pop, shift, unshift, get, set, size, remove, insert, includes, indexof, max, min, sum, avg, median, stdev, sort, slice, copy, join, …</li>
             <li><b>Deklarasi</b>: <code>indicator()</code>, <code>strategy()</code> (initial_capital, default_qty_type, default_qty_value, commission_type, commission_value, pyramiding, slippage, process_orders_on_close)</li>
             <li><b>Input</b>: <code>input.int/float/bool/string/source/color</code></li>
             <li><b>ta.</b>: sma ema rma wma hma vwma swma stdev variance dev rsi macd bb bbw kc atr tr supertrend highest lowest highestbars lowestbars crossover crossunder cross change mom roc cum vwap obv stoch cci mfi dmi barssince valuewhen rising falling pivothigh pivotlow linreg median percentrank wpr sar</li>
@@ -177,7 +181,7 @@
             <li><b>strategy.</b>: entry, exit (stop, limit, profit, loss), close, close_all, cancel, cancel_all, position_size, position_avg_price, equity, netprofit, openprofit, closedtrades …</li>
           </ul>
           <h3>Belum didukung</h3>
-          <p class="muted"><code>request.security</code> (diabaikan, memakai data chart), <code>switch</code>, <code>array/matrix/map</code>, <code>label/line/box/table</code> (diabaikan), trailing stop, histori di dalam fungsi.</p>
+          <p class="muted"><code>request.security</code> dengan ekspresi kompleks (dihitung di timeframe chart + peringatan di Log), <code>type</code>/<code>method</code> buatan sendiri, <code>map/matrix</code>, <code>linefill</code>, trailing stop, partial exit, histori variabel lokal di dalam fungsi.</p>
           <h3>Aturan eksekusi backtest</h3>
           <p class="muted">Seperti TradingView: order market diisi di <b>open bar berikutnya</b>. Stop/limit dicek di dalam bar (open → high/low terdekat → sisi lain → close). Posisi bersih; entry berlawanan = reversal.</p>
         </div>
@@ -188,7 +192,10 @@
   <script src="js/vendor/lightweight-charts.standalone.production.js"></script>
   <script src="js/ta.js"></script>
   <script src="js/backtest.js"></script>
+  <script src="js/pine-ext.js"></script>
   <script src="js/pine.js"></script>
+  <script src="js/draw-layer.js"></script>
+  <script src="js/scripts-crt.js"></script>
   <script src="js/scripts.js"></script>
   <script src="js/data.js"></script>
   <script src="js/app.js"></script>

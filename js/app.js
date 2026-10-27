@@ -43,8 +43,18 @@
     liveStop: null,
     paper: null,
   };
-  if (!S.scripts) {
-    S.scripts = Examples.EXAMPLES.map((e) => ({ id: uid(), name: e.name, code: e.code, enabled: e.enabled, inputs: {} }));
+  // contoh bawaan: install baru dapat semua; install lama hanya dapat contoh yang belum pernah ditawarkan
+  {
+    const fresh = !S.scripts;
+    if (fresh) S.scripts = [];
+    const seen = new Set(store.get('seenExamples', fresh ? [] : Examples.ORIGINAL_KEYS));
+    for (const e of Examples.EXAMPLES) {
+      if (seen.has(e.key)) continue;
+      S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: e.enabled, inputs: {} });
+      seen.add(e.key);
+    }
+    store.set('seenExamples', [...seen]);
+    store.set('scripts', S.scripts);
   }
   const saveScripts = () => store.set('scripts', S.scripts);
   const saveSettings = () => store.set('settings', settings);
@@ -102,6 +112,8 @@
     candleMarkers: [], // {i, m}
     paneMarkers: [], // {api, plugin, list}
     priceLines: [], // {series, line}
+    prims: [], // {series, prim} — box/line/label dari script
+    tables: [], // objek table.new dari script aktif
   };
 
   function endIdx() {
@@ -118,6 +130,9 @@
   function clearView() {
     for (const s of view.series) chart.removeSeries(s.api);
     for (const p of view.priceLines) p.series.removePriceLine(p.line);
+    for (const p of view.prims) { try { p.series.detachPrimitive(p.prim); } catch (e) { /* seri sudah dihapus */ } }
+    view.prims = [];
+    view.tables = [];
     view.series = [];
     view.paneMarkers = [];
     view.priceLines = [];
@@ -159,7 +174,9 @@
       const res = S.results.get(sc.id);
       if (!res) continue;
       const overlay = res.decl.overlay;
-      const hasPaneContent = res.plots.some((p) => !p.hidden && !p.forceOverlay) || res.hlines.length || res.bgcolors.length;
+      const dr = res.drawings || { box: [], line: [], label: [], table: [] };
+      const paneDrawings = !overlay && [...dr.box, ...dr.line, ...dr.label].some((o) => !o.props.force_overlay);
+      const hasPaneContent = res.plots.some((p) => !p.hidden && !p.forceOverlay) || res.hlines.length || res.bgcolors.length || paneDrawings;
       const paneIdx = overlay ? 0 : hasPaneContent ? pane++ : 0;
       let first = overlay ? candle : null;
 
@@ -245,6 +262,32 @@
         pm.sort((a, b) => a.i - b.i);
         view.paneMarkers.push({ plugin: LW.createSeriesMarkers(first, []), list: pm });
       }
+
+      // objek gambar: box / line / label
+      const toMain = { box: [], line: [], label: [] }, toPane = { box: [], line: [], label: [] };
+      for (const k of ['box', 'line', 'label']) for (const o of dr[k]) (overlay || o.props.force_overlay ? toMain : toPane)[k].push(o);
+      const attach = (series, items) => {
+        if (!items.box.length && !items.line.length && !items.label.length) return;
+        const prim = new LunaDrawLayer.DrawingPrimitive({ items, getEnd: endIdx, getBars: () => S.bars });
+        series.attachPrimitive(prim);
+        view.prims.push({ series, prim });
+      };
+      attach(candle, toMain);
+      if (toPane.box.length || toPane.line.length || toPane.label.length) {
+        if (!first) {
+          // pane tanpa plot: seri bayangan dengan rentang harga dari objek gambar
+          const ys = [];
+          for (const o of toPane.box) ys.push(o.props.top, o.props.bottom);
+          for (const o of toPane.line) ys.push(o.props.y1, o.props.y2);
+          for (const o of toPane.label) ys.push(o.props.y);
+          const fin = ys.filter((v) => typeof v === 'number' && isFinite(v));
+          const lo = fin.length ? Math.min(...fin) : 0, hi = fin.length ? Math.max(...fin) : 1;
+          first = chart.addSeries(LW.LineSeries, { color: 'rgba(0,0,0,0)', lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }, paneIdx);
+          view.series.push({ api: first, pts: bars.map((b, i) => ({ time: ct(b.time), value: i % 2 ? lo : hi })), script: sc.name, title: null });
+        }
+        attach(first, toPane);
+      }
+      view.tables.push(...dr.table);
     }
 
     // marker trade dari strategi terpilih
@@ -288,6 +331,7 @@
     volume.setData(view.volPts.slice(0, end + 1));
     for (const s of view.series) s.api.setData(s.pts.slice(0, end + 1));
     applyMarkers(end);
+    LunaDrawLayer.renderTables($('pine-tables'), view.tables, end);
   }
 
   function appendData(idx) {
@@ -295,6 +339,7 @@
     volume.update(view.volPts[idx]);
     for (const s of view.series) s.api.update(s.pts[idx]);
     applyMarkers(idx);
+    LunaDrawLayer.renderTables($('pine-tables'), view.tables, idx);
   }
 
   // ------------------------------------------------------------------
@@ -354,7 +399,7 @@
     const t0 = performance.now();
     let res;
     try {
-      res = Pine.run(getCompiled(sc.code), S.bars, { inputs: sc.inputs, symbol: settings.symbol, timeframe: settings.tf });
+      res = Pine.run(getCompiled(sc.code), S.bars, { inputs: sc.inputs, symbol: settings.symbol, timeframe: S.source === 'csv' ? null : settings.tf });
     } catch (e) {
       res = { decl: Object.assign(Pine.peekDecl(sc.code), { overlay: true }), plots: [], shapes: [], hlines: [], bgcolors: [], barcolors: null, inputs: [], strategy: null, error: e.message };
     }
@@ -362,6 +407,7 @@
     S.results.set(sc.id, res);
     if (res.inputs.length) { S.inputDefs[sc.id] = res.inputs; store.set('inputDefs', S.inputDefs); }
     const ms = (performance.now() - t0).toFixed(0);
+    for (const w of res.warnings || []) log(`${sc.name}: ⚠ ${w}`);
     if (res.error) log(`${sc.name}: ${res.error}`, true);
     else log(`${sc.name}: OK (${ms} ms${res.strategy ? `, ${res.strategy.trades.length} trade` : ''})`);
     return res;
@@ -469,9 +515,11 @@
         inp = document.createElement('input');
         inp.type = 'checkbox';
         inp.checked = cur === true || cur === 'true';
-      } else if (d.type === 'source' || Array.isArray(d.options)) {
+      } else if (d.type === 'source' || d.type === 'timeframe' || Array.isArray(d.options)) {
         inp = document.createElement('select');
-        for (const o of d.type === 'source' ? SOURCES : d.options) {
+        const TFOPTS = ['1', '3', '5', '15', '30', '60', '120', '240', '360', '720', '1D', '3D', '1W', '1M', '3M'];
+        const opts = d.type === 'source' ? SOURCES : Array.isArray(d.options) ? d.options : TFOPTS.includes(String(cur)) ? TFOPTS : [String(cur), ...TFOPTS];
+        for (const o of opts) {
           const op = document.createElement('option');
           op.value = o; op.textContent = o;
           if (String(o) === String(cur)) op.selected = true;
@@ -1100,7 +1148,7 @@
   }
   function runScriptQuiet(sc) {
     try {
-      S.results.set(sc.id, Pine.run(getCompiled(sc.code), S.bars, { inputs: sc.inputs, symbol: settings.symbol, timeframe: settings.tf }));
+      S.results.set(sc.id, Pine.run(getCompiled(sc.code), S.bars, { inputs: sc.inputs, symbol: settings.symbol, timeframe: S.source === 'csv' ? null : settings.tf }));
     } catch (e) { /* error sudah tampil saat run awal */ }
   }
 
