@@ -11,13 +11,7 @@
     <div class="brand">🌙 Luna</div>
 
     <div class="group">
-      <input id="symbol" list="symbols" value="BTCUSDT" spellcheck="false" title="Simbol Binance, mis. BTCUSDT" />
-      <datalist id="symbols">
-        <option>BTCUSDT</option><option>ETHUSDT</option><option>BNBUSDT</option><option>SOLUSDT</option>
-        <option>XRPUSDT</option><option>DOGEUSDT</option><option>ADAUSDT</option><option>AVAXUSDT</option>
-        <option>LINKUSDT</option><option>DOTUSDT</option><option>TONUSDT</option><option>SUIUSDT</option>
-        <option>PEPEUSDT</option><option>LTCUSDT</option><option>TRXUSDT</option><option>NEARUSDT</option>
-      </datalist>
+      <button id="symbol-btn" class="symbol-btn" title="Pilih koin (/)"><span id="symbol-label">BTCUSDT</span> <span class="caret">▾</span></button>
       <div id="tfs" class="seg"></div>
       <select id="barcount" title="Jumlah candle yang dimuat">
         <option value="1000">1.000 bar</option>
@@ -159,14 +153,14 @@
         <div data-pane="help" class="pane help">
           <h3>Cara pakai</h3>
           <ol>
-            <li>Ketik simbol (mis. <code>ETHUSDT</code>), pilih timeframe, klik <b>Muat</b>.</li>
+            <li>Klik tombol simbol (atau tekan <kbd>/</kbd>) untuk memilih koin dari semua pair Binance, lalu pilih timeframe.</li>
             <li>Centang script di tab <b>Script</b> untuk menampilkannya di chart. Klik ⚙ untuk ubah input.</li>
             <li>Buat / ubah script di tab <b>Editor</b> dengan sintaks mirip Pine Script v5.</li>
             <li>Script <code>strategy(...)</code> otomatis di-backtest → lihat panel <b>Strategy Tester</b>.</li>
             <li><b>⏪ Replay</b>: klik titik di chart, lalu ▶ / → untuk maju bar demi bar. Hasil backtest &amp; paper trading mengikuti posisi replay.</li>
           </ol>
           <h3>Shortcut</h3>
-          <p><kbd>R</kbd> replay · <kbd>Spasi</kbd> play/pause · <kbd>→</kbd>/<kbd>←</kbd> maju/mundur · <kbd>B</kbd>/<kbd>S</kbd>/<kbd>C</kbd> buy/sell/tutup (saat replay) · <kbd>Ctrl+Enter</kbd> simpan script</p>
+          <p><kbd>/</kbd> pilih koin · <kbd>R</kbd> replay · <kbd>Spasi</kbd> play/pause · <kbd>→</kbd>/<kbd>←</kbd> maju/mundur · <kbd>B</kbd>/<kbd>S</kbd>/<kbd>C</kbd> buy/sell/tutup (saat replay) · <kbd>Ctrl+Enter</kbd> simpan script</p>
           <h3>Yang didukung</h3>
           <ul class="compact">
             <li><b>Sintaks</b>: <code>x = …</code>, <code>var x = …</code>, <code>x := …</code>, <code>+=</code>, <code>if / else if / else</code>, <code>switch</code>, <code>x = if …</code> / <code>x = switch …</code>, <code>for i = a to b by s</code>, <code>for x in arr</code>, <code>while</code>, <code>break/continue</code>, ternary <code>?:</code>, <code>and/or/not</code>, histori <code>close[1]</code>, tuple <code>[a, b] = …</code>, fungsi <code>f(x) =&gt; …</code>, method <code>arr.push(x)</code>, tipe <code>float/int/array&lt;float&gt;/…</code>, argumen bernama.</li>
@@ -188,6 +182,19 @@
       </div>
     </aside>
   </main>
+
+  <div id="sym-modal" class="modal hidden" role="dialog" aria-label="Pilih koin">
+    <div class="modal-box">
+      <div class="modal-head">
+        <input id="sym-search" type="text" placeholder="Cari koin… mis. ETH, SOL, PEPE" spellcheck="false" autocomplete="off" />
+        <button id="sym-close" class="icon" title="Tutup (Esc)">✕</button>
+      </div>
+      <div id="sym-quotes" class="sym-quotes"></div>
+      <div class="sym-row sym-header"><span></span><span>Pair</span><span>Harga</span><span>24j</span><span>Volume 24j</span></div>
+      <div id="sym-list" class="sym-list"></div>
+      <div id="sym-info" class="modal-foot muted"></div>
+    </div>
+  </div>
 
   <script src="js/vendor/lightweight-charts.standalone.production.js"></script>
   <script src="js/ta.js"></script>

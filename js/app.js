@@ -50,8 +50,9 @@
     const seen = new Set(store.get('seenExamples', fresh ? [] : Examples.ORIGINAL_KEYS));
     for (const e of Examples.EXAMPLES) {
       if (seen.has(e.key)) continue;
-      S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: e.enabled, inputs: {} });
       seen.add(e.key);
+      if (S.scripts.some((x) => x.name === e.name)) continue; // sudah ada (mis. data browser terhapus sebagian)
+      S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: e.enabled, inputs: {} });
     }
     store.set('seenExamples', [...seen]);
     store.set('scripts', S.scripts);
@@ -357,6 +358,14 @@
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
+  // desimal nilai indikator di legend: ikuti harga koin (PEPE butuh 8 desimal, RSI cukup 2–4)
+  function legendDec(v) {
+    const a = Math.abs(v);
+    if (a >= 1000) return 2;
+    if (a >= 1) return Math.min(Math.max(S.priceDec, 2), 4);
+    return Math.max(S.priceDec, 4);
+  }
+
   function renderLegend(param) {
     const n = S.bars.length;
     if (!n) { $('legend').innerHTML = ''; return; }
@@ -374,7 +383,7 @@
       if (!s.title) continue;
       const pt = s.pts[i];
       if (!groups.has(s.script)) groups.set(s.script, []);
-      groups.get(s.script).push(`<b style="color:${esc(pt && pt.color && pt.color !== GAP ? pt.color : s.color)}">${pt && pt.value !== undefined ? fmt(pt.value, Math.abs(pt.value) < 1000 ? Math.min(S.priceDec + 1, 4) : 2) : '—'}</b>`);
+      groups.get(s.script).push(`<b style="color:${esc(pt && pt.color && pt.color !== GAP ? pt.color : s.color)}">${pt && pt.value !== undefined ? fmt(pt.value, legendDec(pt.value)) : '—'}</b>`);
     }
     for (const [name, vals] of groups) html += `<div class="ind">${esc(name)} ${vals.join(' ')}</div>`;
     $('legend').innerHTML = html;
@@ -1084,8 +1093,8 @@
     if (loading) return;
     loading = true;
     stopLive();
-    settings.symbol = $('symbol').value.trim().toUpperCase() || 'BTCUSDT';
-    $('symbol').value = settings.symbol;
+    settings.symbol = (settings.symbol || 'BTCUSDT').toUpperCase();
+    $('symbol-label').textContent = settings.symbol;
     settings.count = +$('barcount').value;
     saveSettings();
     status(`Memuat ${settings.symbol} ${settings.tf}…`);
@@ -1179,10 +1188,9 @@
     if (tf === settings.tf) b.classList.add('active');
     tfBox.appendChild(b);
   }
-  $('symbol').value = settings.symbol;
+  $('symbol-label').textContent = settings.symbol;
   $('barcount').value = String(settings.count);
   $('btn-load').onclick = loadBinance;
-  $('symbol').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadBinance(); });
   $('btn-live').onclick = () => (S.liveStop ? stopLive() : startLive());
   $('btn-demo').onclick = () => {
     stopLive();
@@ -1197,6 +1205,7 @@
       const bars = Data.parseCSV(await f.text());
       stopLive();
       settings.symbol = f.name.replace(/\.[^.]+$/, '').toUpperCase();
+      $('symbol-label').textContent = settings.symbol;
       setBars(bars, 'csv');
       status(`CSV ${f.name}: ${bars.length} bar`);
     } catch (err) {
@@ -1238,10 +1247,134 @@
     });
   })();
 
+  // ------------------------------------------------------------------
+  // Pemilih koin
+  // ------------------------------------------------------------------
+  const picker = { list: null, live: false, loadedAt: 0, quote: store.get('pickerQuote', 'USDT'), sel: 0, rows: [] };
+  const favs = new Set(store.get('favorites', ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']));
+
+  function fmtVol(v) {
+    if (isNa(v)) return '—';
+    if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    return v.toFixed(0);
+  }
+  function fmtPx(v) {
+    if (isNa(v)) return '—';
+    const d = v >= 1000 ? 2 : v >= 1 ? 4 : v >= 0.01 ? 6 : 8;
+    return Number(v).toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: d });
+  }
+
+  async function openPicker() {
+    $('sym-modal').classList.remove('hidden');
+    const inp = $('sym-search');
+    inp.value = '';
+    inp.focus();
+    picker.sel = 0;
+    renderPicker();
+    if (!picker.list || Date.now() - picker.loadedAt > 60e3) {
+      $('sym-info').textContent = 'Memuat daftar koin dari Binance…';
+      const r = await Data.fetchSymbols();
+      picker.list = r.list;
+      picker.live = r.live;
+      picker.loadedAt = r.live ? Date.now() : 0;
+      renderPicker();
+    }
+  }
+  function closePicker() {
+    $('sym-modal').classList.add('hidden');
+  }
+
+  function renderPicker() {
+    const list = picker.list || [];
+    // tombol filter mata uang quote (yang ada di data saja)
+    const quotes = ['★', ...Data.QUOTES.filter((q) => list.some((x) => x.quote === q)), 'Semua'];
+    if (!quotes.includes(picker.quote)) picker.quote = 'USDT';
+    $('sym-quotes').innerHTML = quotes.map((q) => `<button data-q="${q}" class="${q === picker.quote ? 'active' : ''}">${q === '★' ? '★ Favorit' : q}</button>`).join('');
+    const term = $('sym-search').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    let rows = list.filter((x) => {
+      if (term) return x.symbol.includes(term) || x.base.startsWith(term);
+      if (picker.quote === '★') return favs.has(x.symbol);
+      return picker.quote === 'Semua' || x.quote === picker.quote;
+    });
+    if (term) {
+      // saat mencari: pair USDT & kecocokan awal nama koin di atas
+      rows.sort((a, b) => (b.base === term) - (a.base === term) || (b.base.startsWith(term)) - (a.base.startsWith(term))
+        || (b.quote === 'USDT') - (a.quote === 'USDT') || (b.quoteVolume || 0) - (a.quoteVolume || 0));
+    } else {
+      rows.sort((a, b) => favs.has(b.symbol) - favs.has(a.symbol) || (b.quoteVolume || 0) - (a.quoteVolume || 0));
+    }
+    // simbol yang diketik persis tapi tidak ada di daftar (mis. Binance tidak terjangkau) tetap bisa dipilih
+    if (term.length >= 5 && !rows.some((x) => x.symbol === term)) {
+      const sp = Data.splitSymbol(term);
+      rows.unshift({ symbol: term, base: sp.base, quote: sp.quote, price: NaN, change: NaN, quoteVolume: NaN, typed: true });
+    }
+    picker.rows = rows.slice(0, 400);
+    picker.sel = Math.min(picker.sel, Math.max(0, picker.rows.length - 1));
+    $('sym-list').innerHTML = picker.rows.map((x, k) => `
+      <div class="sym-row ${k === picker.sel ? 'sel' : ''} ${x.symbol === settings.symbol ? 'cur' : ''}" data-k="${k}">
+        <span class="star ${favs.has(x.symbol) ? 'on' : ''}" data-fav="${x.symbol}" title="Favorit">★</span>
+        <span><b>${esc(x.base)}</b><span class="q">${x.quote ? '/' + esc(x.quote) : ''}</span>${x.typed ? ' <span class="q">(ketik)</span>' : ''}</span>
+        <span>${fmtPx(x.price)}</span>
+        <span class="${sign(x.change)}">${isNa(x.change) ? '—' : (x.change > 0 ? '+' : '') + x.change.toFixed(2) + '%'}</span>
+        <span class="muted">${fmtVol(x.quoteVolume)}</span>
+      </div>`).join('') || '<div class="empty">Tidak ada koin yang cocok.</div>';
+    const total = list.length;
+    $('sym-info').textContent = !picker.list ? 'Memuat…'
+      : picker.live ? `${total} pair aktif di Binance · urut volume 24 jam · ↑↓ Enter untuk memilih · ★ untuk favorit`
+        : 'Binance tidak terjangkau — menampilkan koin populer. Ketik simbol lengkap (mis. ARBUSDT) lalu Enter.';
+    const selEl = $('sym-list').querySelector('.sym-row.sel');
+    if (selEl) selEl.scrollIntoView({ block: 'nearest' });
+  }
+
+  function chooseSymbol(sym) {
+    closePicker();
+    if (!sym) return;
+    settings.symbol = sym;
+    $('symbol-label').textContent = sym;
+    loadBinance();
+  }
+
+  $('symbol-btn').onclick = openPicker;
+  $('sym-close').onclick = closePicker;
+  $('sym-modal').addEventListener('mousedown', (e) => { if (e.target.id === 'sym-modal') closePicker(); });
+  $('sym-search').addEventListener('input', () => { picker.sel = 0; renderPicker(); });
+  $('sym-search').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closePicker(); e.stopPropagation(); }
+    else if (e.key === 'ArrowDown') { picker.sel = Math.min(picker.rows.length - 1, picker.sel + 1); renderPicker(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { picker.sel = Math.max(0, picker.sel - 1); renderPicker(); e.preventDefault(); }
+    else if (e.key === 'Enter') { const r = picker.rows[picker.sel]; chooseSymbol(r && r.symbol); }
+  });
+  $('sym-quotes').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-q]');
+    if (!b) return;
+    picker.quote = b.dataset.q;
+    store.set('pickerQuote', picker.quote);
+    $('sym-search').value = '';
+    picker.sel = 0;
+    renderPicker();
+    $('sym-search').focus();
+  });
+  $('sym-list').addEventListener('click', (e) => {
+    const star = e.target.closest('[data-fav]');
+    if (star) {
+      const s = star.dataset.fav;
+      if (favs.has(s)) favs.delete(s); else favs.add(s);
+      store.set('favorites', [...favs]);
+      renderPicker();
+      return;
+    }
+    const row = e.target.closest('.sym-row[data-k]');
+    if (row) chooseSymbol(picker.rows[+row.dataset.k].symbol);
+  });
+
   document.addEventListener('keydown', (e) => {
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
+    if (!$('sym-modal').classList.contains('hidden')) return;
+    if (k === '/') { openPicker(); e.preventDefault(); return; }
     if (k === 'r') { R.active ? exitReplay() : enterReplay(); e.preventDefault(); return; }
     if (k === 'escape' && R.active) {
       if (R.picking && R.idx !== null) { R.picking = false; $('replay-hint').classList.add('hidden'); document.querySelector('.chart-wrap').classList.remove('picking'); applyData(R.idx); }

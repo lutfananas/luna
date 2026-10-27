@@ -2,7 +2,7 @@
 
 Dashboard trading pribadi ala TradingView yang berjalan sepenuhnya di browser Anda:
 
-- **Chart candlestick** data Binance (semua pair spot, timeframe 1m–1w, sampai 20.000 bar) + update **live** via WebSocket.
+- **Chart candlestick** data Binance (pemilih koin dengan pencarian & favorit untuk semua pair spot, timeframe 1m–1w, sampai 20.000 bar) + update **live** via WebSocket.
 - **Script mirip Pine Script v5** — tulis indikator & strategi sendiri, tambahkan sesuka hati, ubah input lewat ⚙.
 - **Backtest otomatis** untuk setiap `strategy(...)`: net profit, win rate, profit factor, max drawdown, kurva equity vs buy & hold, daftar trade.
 - **Bar Replay** — mundur ke titik mana pun lalu putar ulang candle satu per satu (▶, →, ←, kecepatan 1x–30x). Hasil backtest ikut menyesuaikan posisi replay.
@@ -72,6 +72,7 @@ Mengikuti default TradingView: order market diisi di **open bar berikutnya** (at
 
 | Tombol | Fungsi |
 |---|---|
+| `/` | Pilih koin (cari dari semua pair Binance, ★ favorit) |
 | `R` | Masuk/keluar replay |
 | `Spasi` | Play / pause replay |
 | `→` / `←` | Maju / mundur 1 bar |

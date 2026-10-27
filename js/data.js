@@ -48,7 +48,9 @@
       if (onProgress) onProgress(out.length, total);
       if (rows.length < limit) break;
     }
-    return out;
+    // jaga-jaga: urutkan & buang timestamp ganda (chart menolak data yang tidak naik)
+    out.sort((a, b) => a.time - b.time);
+    return out.filter((b, i) => i === 0 || b.time !== out[i - 1].time);
   }
 
   /** Langganan candle realtime. onKline(bar, isClosed). Mengembalikan fungsi untuk berhenti. */
@@ -151,7 +153,39 @@
     return bars;
   }
 
-  const api = { fetchBinance, subscribe, parseCSV, demo, INTERVAL_MS };
+  const QUOTES = ['USDT', 'FDUSD', 'USDC', 'BTC', 'ETH', 'BNB', 'TRY', 'EUR', 'BRL', 'JPY', 'DAI', 'TUSD'];
+  const POPULAR = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'DOGE', 'ADA', 'TRX', 'AVAX', 'LINK', 'TON', 'SUI', 'DOT', 'LTC', 'BCH',
+    'NEAR', 'APT', 'UNI', 'ICP', 'PEPE', 'SHIB', 'FET', 'RENDER', 'ARB', 'OP', 'INJ', 'ATOM', 'FIL', 'HBAR', 'XLM', 'ETC',
+    'TIA', 'SEI', 'WIF', 'BONK', 'FLOKI', 'AAVE', 'MKR', 'LDO', 'STX', 'IMX', 'GALA', 'SAND', 'MANA', 'AXS', 'JUP', 'PYTH',
+    'ENA', 'WLD', 'ORDI', 'TAO', 'ONDO', 'TRUMP', 'PENGU', 'VIRTUAL', 'HYPE', 'POL', 'ALGO', 'VET', 'CRV'];
+
+  function splitSymbol(sym) {
+    for (const q of QUOTES) if (sym.endsWith(q) && sym.length > q.length) return { base: sym.slice(0, -q.length), quote: q };
+    return { base: sym, quote: '' };
+  }
+
+  /**
+   * Daftar semua pair spot Binance yang aktif diperdagangkan + statistik 24 jam.
+   * Jika Binance tidak bisa diakses, kembalikan daftar koin populer (tanpa harga).
+   */
+  async function fetchSymbols() {
+    try {
+      const rows = await fetchJSON('/api/v3/ticker/24hr?type=MINI');
+      const out = [];
+      for (const r of rows) {
+        const qv = +r.quoteVolume;
+        if (!(qv > 0) || +r.closeTime < Date.now() - 2 * 86400e3) continue; // pair yang tidak aktif
+        const { base, quote } = splitSymbol(r.symbol);
+        const open = +r.openPrice, last = +r.lastPrice;
+        out.push({ symbol: r.symbol, base, quote, price: last, change: open ? ((last - open) / open) * 100 : NaN, quoteVolume: qv });
+      }
+      return { list: out, live: true };
+    } catch (e) {
+      return { list: POPULAR.map((b) => ({ symbol: b + 'USDT', base: b, quote: 'USDT', price: NaN, change: NaN, quoteVolume: NaN })), live: false, error: e.message };
+    }
+  }
+
+  const api = { fetchBinance, fetchSymbols, splitSymbol, subscribe, parseCSV, demo, INTERVAL_MS, QUOTES };
   root.LunaData = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
