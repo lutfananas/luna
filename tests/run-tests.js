@@ -298,7 +298,8 @@ console.log('EMA Cross: entry zona EMA, SL swing, TP zona');
 {
   const { LEGACY } = require('../js/scripts.js');
   const ema = EXAMPLES.find((e) => e.key === 'ema-cross');
-  ok(LEGACY['ema-cross'][0] !== ema.code && /strategy\.close\("Long"\)/.test(LEGACY['ema-cross'][0]), 'kode lama disimpan untuk migrasi otomatis');
+  const olds = LEGACY['ema-cross'];
+  ok(olds.every((o) => o.trim() !== ema.code.trim()) && olds.some((o) => /strategy\.close\("Long"\)\n?$/.test(o.trim() + '\n')), `${olds.length} versi lama disimpan untuk migrasi otomatis`);
   let p = 100, seed = 5;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const wb = [];
