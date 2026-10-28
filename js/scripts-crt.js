@@ -18,8 +18,7 @@
 
     const strategyInputs = isStrategy ? String.raw`
 g7 = "⑦  Strategy"
-targetMode = input.string(S_RR, "Take Profit", options = [S_T1, S_T2, S_RR], group = g7)
-tpR        = input.float(0.6, "Fixed R Multiple", minval = 0.2, step = 0.1, group = g7, tooltip = "Dipakai jika Take Profit = Fixed R: TP = entry ± R × jarak stop.")
+targetMode = input.string(S_SCALE, "Take Profit", options = [S_SCALE, S_T1, S_T2, S_RR], group = g7, tooltip = "Partial = tutup bertahap di TP1 / TP2 / TP3 (lihat grup ⑧). Mode lain menutup 100% di satu target.")
 allowLong  = input.bool(true, "Allow Long", group = g7)
 allowShort = input.bool(true, "Allow Short", group = g7)
 riskPct    = input.float(1.0, "Risk per Trade (% equity)", minval = 0.1, maxval = 100, step = 0.1, group = g7, tooltip = "Ukuran posisi = risiko / jarak stop, dibatasi 100% equity (tanpa leverage).")
@@ -29,13 +28,60 @@ riskPct    = input.float(1.0, "Risk per Trade (% equity)", minval = 0.1, maxval 
 // ══════════════════════════════ Strategy ══════════════════════════════
 riskQty(stop) =>
     math.min(strategy.equity * riskPct / 100 / math.abs(close - stop), strategy.equity / close)
+scaleOut = targetMode == S_SCALE
+q1 = math.min(tp1Pct, 90)
+q2 = math.min(tp2Pct, 95 - q1)
+var float eQty = 0.0
+var int   eStage = 0
+var float eT1 = na
+var float eT2 = na
+var float eT3 = na
 if sigBear and allowShort and strategy.position_size == 0
-    strategy.entry("CRT S", strategy.short, qty = riskQty(bearStop))
-    strategy.exit("XS", "CRT S", stop = bearStop, limit = targetMode == S_RR ? close - tpR * (bearStop - close) : targetMode == S_T1 ? bearT1 : bearT2)
+    q = riskQty(bearStop)
+    strategy.entry("CRT S", strategy.short, qty = q)
+    if scaleOut
+        eQty := q
+        eStage := 0
+        eT1 := bearTP1
+        eT2 := bearTP2
+        eT3 := bearTP3
+        strategy.exit("TP1", "CRT S", qty_percent = q1, stop = bearStop, limit = bearTP1)
+        strategy.exit("TP2", "CRT S", qty_percent = q2, stop = bearStop, limit = bearTP2)
+        strategy.exit("TP3", "CRT S", qty_percent = 100, stop = bearStop, limit = bearTP3)
+    else
+        strategy.exit("XS", "CRT S", stop = bearStop, limit = targetMode == S_RR ? bearTP1 : targetMode == S_T1 ? bearT1 : bearT2)
 if sigBull and allowLong and strategy.position_size == 0
-    strategy.entry("CRT L", strategy.long, qty = riskQty(bullStop))
-    strategy.exit("XL", "CRT L", stop = bullStop, limit = targetMode == S_RR ? close + tpR * (close - bullStop) : targetMode == S_T1 ? bullT1 : bullT2)
+    q = riskQty(bullStop)
+    strategy.entry("CRT L", strategy.long, qty = q)
+    if scaleOut
+        eQty := q
+        eStage := 0
+        eT1 := bullTP1
+        eT2 := bullTP2
+        eT3 := bullTP3
+        strategy.exit("TP1", "CRT L", qty_percent = q1, stop = bullStop, limit = bullTP1)
+        strategy.exit("TP2", "CRT L", qty_percent = q2, stop = bullStop, limit = bullTP2)
+        strategy.exit("TP3", "CRT L", qty_percent = 100, stop = bullStop, limit = bullTP3)
+    else
+        strategy.exit("XL", "CRT L", stop = bullStop, limit = targetMode == S_RR ? bullTP1 : targetMode == S_T1 ? bullT1 : bullT2)
+// geser SL sisa posisi setelah TP1 / TP2 terisi (dibaca dari ukuran posisi yang tersisa)
+if scaleOut and strategy.position_size != 0 and eQty > 0
+    rem = math.abs(strategy.position_size) / eQty
+    stage = rem < 1 - (q1 + q2) / 100 + 0.001 ? 2 : rem < 1 - q1 / 100 + 0.001 ? 1 : 0
+    if stage > eStage and slMove != S_NONE
+        fromId = strategy.position_size > 0 ? "CRT L" : "CRT S"
+        be = strategy.position_avg_price
+        if stage == 1
+            strategy.exit("TP2", fromId, qty_percent = q2, stop = be, limit = eT2)
+            strategy.exit("TP3", fromId, qty_percent = 100, stop = be, limit = eT3)
+        else
+            strategy.exit("TP3", fromId, qty_percent = 100, stop = slMove == S_BE_T1 ? eT1 : be, limit = eT3)
+    eStage := math.max(eStage, stage)
 ` : '';
+    // awal & akhir garis rencana: strategy mengikuti posisi sungguhan, indikator mengikuti sinyal
+    const planBear = isStrategy ? 'sigBear and allowShort and strategy.position_size == 0' : 'sigBear and pDir == 0';
+    const planBull = isStrategy ? 'sigBull and allowLong and strategy.position_size == 0 and not planStartBear' : 'sigBull and pDir == 0 and not planStartBear';
+    const planFlat = isStrategy ? 'bar_index > pBar + 1 and strategy.position_size == 0' : 'false';
 
     return String.raw`//@version=6
 ${header}
@@ -72,6 +118,10 @@ S_BOT_L  = "Bottom Left"
 S_T1     = "T1 (50% Range)"
 S_T2     = "T2 (Opposite Extreme)"
 S_RR     = "Fixed R"
+S_SCALE  = "TP1 / TP2 / TP3 (Partial)"
+S_NONE   = "None"
+S_BE     = "Break-even after TP1"
+S_BE_T1  = "BE after TP1, TP1 after TP2"
 
 g1 = "①  Higher Timeframe"
 htfMode   = input.string(S_AUTO, "HTF Mode", options = [S_AUTO, S_MANUAL], group = g1, tooltip = "Auto = tabel pasangan timeframe: MN→1D · 1W→4H · 1D→1H · 4H→5M · 1H→1M")
@@ -118,9 +168,15 @@ g6 = "⑥  Extras"
 showDon    = input.bool(${vis}, "2H Donchian", group = g6)
 donLen     = input.int(20, "Donchian Length (2H bars)", minval = 2, maxval = 200, group = g6)
 showSweeps = input.bool(${vis}, "Mark Liquidity Sweeps (TBS)", group = g6)
-showTrades = input.bool(${vis}, "Draw Signal SL / TP", group = g6)
+showTrades = input.bool(true, "Draw Trade Plan (Entry · SL · TP1-3)", group = g6)
 showTable  = input.bool(${vis}, "Show Table", group = g6)
 tablePos   = input.string(S_TOP_R, "Table Position", options = [S_TOP_R, S_TOP_L, S_BOT_R, S_BOT_L], group = g6)
+
+g8 = "⑧  Trade Plan"
+tpR    = input.float(0.6, "Fixed R Multiple", minval = 0.2, step = 0.1, group = g8, tooltip = "TP1 = entry ± R × jarak stop. TP2 = EQ 50% range HTF (jika berjarak ≥ 0.25R dari TP1 & TP3, selain itu titik tengah TP1–TP3). TP3 = ujung range HTF seberang.")
+tp1Pct = input.float(70, "TP1 Close %", minval = 5, maxval = 90, step = 5, group = g8)
+tp2Pct = input.float(20, "TP2 Close %", minval = 5, maxval = 90, step = 5, group = g8, tooltip = "Sisa posisi ditutup di TP3.")
+slMove = input.string(S_BE_T1, "Move SL After TP", options = [S_NONE, S_BE, S_BE_T1], group = g8)
 ${strategyInputs}
 
 // ══════════════════════════════ ② HTF Engine ══════════════════════════════
@@ -464,6 +520,15 @@ bearT2   = bearRL
 bullStop = math.min(bullExt - slBuf, close - minStop)
 bullT1   = (bullRH + bullRL) / 2
 bullT2   = bullRH
+// rencana TP berjenjang: TP1 = R tetap · TP2 = EQ (50%) · TP3 = ujung range seberang
+bearTP1  = close - tpR * (bearStop - close)
+bearTP3  = math.min(bearT2, bearTP1)
+bearGap  = 0.25 * (bearStop - close)
+bearTP2  = bearT1 < bearTP1 - bearGap and bearT1 > bearTP3 + bearGap ? bearT1 : (bearTP1 + bearTP3) / 2
+bullTP1  = close + tpR * (close - bullStop)
+bullTP3  = math.max(bullT2, bullTP1)
+bullGap  = 0.25 * (close - bullStop)
+bullTP2  = bullT1 > bullTP1 + bullGap and bullT1 < bullTP3 - bullGap ? bullT1 : (bullTP1 + bullTP3) / 2
 bearRR   = bearStop > close and close > bearT2 ? (close - bearT2) / (bearStop - close) : 0.0
 bullRR   = bullStop < close and close < bullT2 ? (bullT2 - close) / (close - bullStop) : 0.0
 
@@ -559,8 +624,6 @@ var float tStop = na
 var float tT1 = na
 var float tT2 = na
 var bool  tGotT1 = false
-var line  tSL = na
-var line  tTP = na
 var int   sWin = 0
 var int   sLoss = 0
 var int   sT1 = 0
@@ -572,9 +635,6 @@ if tDir != 0
     if hitT1 and not tGotT1
         tGotT1 := true
         sT1 += 1
-    if not na(tSL)
-        tSL.set_x2(bar_index)
-        tTP.set_x2(bar_index)
     if hitSL
         sLoss += 1
         tDir := 0
@@ -588,12 +648,101 @@ if (sigBear or sigBull) and tDir == 0
     tT2 := sigBear ? bearT2 : bullT2
     tGotT1 := false
     sTotal += 1
-    tSL := na
-    tTP := na
-    if showTrades
-        tSL := line.new(bar_index, tStop, bar_index + 1, tStop, color = color.new(colBear, 20), style = line.style_dotted, width = 1)
-        tTP := line.new(bar_index, tT2, bar_index + 1, tT2, color = color.new(colBull, 20), style = line.style_dotted, width = 1)
 ${strategyExec}
+// ══════════════════ Garis rencana trade: Entry · SL · TP1 · TP2 · TP3 ══════════════════
+var int   pDir = 0
+var int   pBar = 0
+var int   pStage = 0
+var float pEntry = na
+var float pRisk = na
+var float pSL = na
+var float pTP1 = na
+var float pTP2 = na
+var float pTP3 = na
+var line  lnE = na
+var line  lnSL = na
+var line  lnT1 = na
+var line  lnT2 = na
+var line  lnT3 = na
+var label lbE = na
+var label lbSL = na
+var label lbT1 = na
+var label lbT2 = na
+var label lbT3 = na
+colEntry = color.new(#2962ff, 0)
+colTP    = color.new(#26a69a, 0)
+planLine(y, c, st) =>
+    line.new(bar_index, y, bar_index, y, color = c, style = st, width = 1)
+planLabel(y, t, c) =>
+    label.new(bar_index, y, t, color = color.new(c, 85), style = label.style_label_left, textcolor = c, size = size.tiny)
+rTxt(y, e, r) =>
+    v = (y - e) * pDir / r
+    (v >= 0 ? "+" : "") + str.tostring(v, "#.##") + "R · " + str.tostring(y, format.mintick)
+
+planStartBear = ${planBear}
+planStartBull = ${planBull}
+if pDir != 0 and bar_index > pBar
+    up = pDir > 0
+    hitSL = up ? low <= pSL : high >= pSL
+    hit1 = up ? high >= pTP1 : low <= pTP1
+    hit2 = up ? high >= pTP2 : low <= pTP2
+    hit3 = up ? high >= pTP3 : low <= pTP3
+    newSL = pSL
+    done = ${planFlat}
+    if hitSL
+        done := true
+        lbSL.set_text((pStage > 0 ? "SL (sisa) ✕ " : "SL ✕ ") + rTxt(pSL, pEntry, pRisk))
+    else
+        if hit1 and pStage < 1
+            pStage := 1
+            lbT1.set_text("TP1 ✓ " + str.tostring(tp1Pct, "#") + "% · " + rTxt(pTP1, pEntry, pRisk))
+            if slMove != S_NONE
+                newSL := pEntry
+        if hit2 and pStage < 2
+            pStage := 2
+            lbT2.set_text("TP2 ✓ " + str.tostring(tp2Pct, "#") + "% · " + rTxt(pTP2, pEntry, pRisk))
+            if slMove == S_BE_T1
+                newSL := pTP1
+        if hit3
+            done := true
+            lbT3.set_text("TP3 ✓ sisa · " + rTxt(pTP3, pEntry, pRisk))
+    lnE.set_x2(bar_index)
+    lnSL.set_x2(bar_index)
+    lnT1.set_x2(bar_index)
+    lnT2.set_x2(bar_index)
+    lnT3.set_x2(bar_index)
+    lbE.set_x(bar_index)
+    lbSL.set_x(bar_index)
+    lbT1.set_x(bar_index)
+    lbT2.set_x(bar_index)
+    lbT3.set_x(bar_index)
+    if newSL != pSL and not done
+        pSL := newSL
+        lnSL := planLine(pSL, colBear, line.style_dashed)
+        lbSL.set_y(pSL)
+        lbSL.set_text((pStage >= 2 and slMove == S_BE_T1 ? "SL → TP1 · " : "SL → BE · ") + str.tostring(pSL, format.mintick))
+    if done
+        pDir := 0
+if showTrades and (planStartBear or planStartBull)
+    pDir := planStartBear ? -1 : 1
+    pBar := bar_index
+    pStage := 0
+    pEntry := close
+    pSL := planStartBear ? bearStop : bullStop
+    pRisk := math.abs(pEntry - pSL)
+    pTP1 := planStartBear ? bearTP1 : bullTP1
+    pTP2 := planStartBear ? bearTP2 : bullTP2
+    pTP3 := planStartBear ? bearTP3 : bullTP3
+    lnE := planLine(pEntry, colEntry, line.style_solid)
+    lnSL := planLine(pSL, colBear, line.style_solid)
+    lnT1 := planLine(pTP1, colTP, line.style_dashed)
+    lnT2 := planLine(pTP2, colTP, line.style_dashed)
+    lnT3 := planLine(pTP3, colTP, line.style_solid)
+    lbE := planLabel(pEntry, (planStartBear ? "SELL " : "BUY ") + str.tostring(pEntry, format.mintick), colEntry)
+    lbSL := planLabel(pSL, "SL · -1R · " + str.tostring(pSL, format.mintick), colBear)
+    lbT1 := planLabel(pTP1, "TP1 " + str.tostring(tp1Pct, "#") + "% · " + rTxt(pTP1, pEntry, pRisk), colTP)
+    lbT2 := planLabel(pTP2, "TP2 " + str.tostring(tp2Pct, "#") + "% · " + rTxt(pTP2, pEntry, pRisk), colTP)
+    lbT3 := planLabel(pTP3, "TP3 sisa · " + rTxt(pTP3, pEntry, pRisk), colTP)
 
 // ══════════════════════════════ ⑨ Table ══════════════════════════════
 tbPos = switch tablePos

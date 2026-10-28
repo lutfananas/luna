@@ -136,6 +136,25 @@ if bar_index == 10
   ok(!hitEarlier, 'exit pada bar pertama yang menyentuh level');
 }
 {
+  // partial exit: qty_percent dihitung dari ukuran awal entry, SL berlaku untuk sisa posisi
+  const t0 = Date.UTC(2024, 0, 1);
+  const mk = (o, h, l, c) => ({ open: o, high: h, low: l, close: c, volume: 1 });
+  const path = [mk(100, 100.5, 99.5, 100), mk(100, 100.5, 99.5, 100), mk(100, 101.5, 99.8, 101), mk(101, 102.5, 100.8, 102), mk(102, 102.2, 98, 98.5), mk(98.5, 99, 98, 98.5)];
+  const pb = path.map((b, k) => ({ ...b, time: t0 + k * 3600e3 }));
+  const src = `strategy("t", initial_capital=1000)
+if bar_index == 0
+    strategy.entry("L", strategy.long, qty=10)
+    strategy.exit("T1", "L", qty_percent=50, limit=101, stop=99)
+    strategy.exit("T2", "L", qty_percent=30, limit=102, stop=99)
+    strategy.exit("T3", "L", qty_percent=100, limit=110, stop=99)`;
+  const r = Pine.run(Pine.compile(src), pb, { timeframe: '1h' });
+  const tr = r.strategy.trades;
+  const q = (id) => tr.filter((t) => t.exitId === id).reduce((a, t) => a + t.qty, 0);
+  ok(tr.length === 3 && near(q('T1'), 5) && near(q('T2'), 3) && near(q('T3'), 2), `partial exit 50/30/sisa (${tr.map((t) => t.exitId + ':' + t.qty).join(' ')})`);
+  ok(near(tr.find((t) => t.exitId === 'T1').exitPrice, 101) && near(tr.find((t) => t.exitId === 'T2').exitPrice, 102) && near(tr.find((t) => t.exitId === 'T3').exitPrice, 99), 'harga TP1, TP2, lalu SL untuk sisa');
+  ok(r.strategy.openTrades.length === 0, 'posisi tertutup penuh');
+}
+{
   // komisi persen
   const r = run(`strategy("t", commission_value=0.1)
 if bar_index == 10
