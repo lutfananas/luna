@@ -371,6 +371,42 @@ console.log('MyTT: rumus KDJ / DMI / BBI & rencana trade');
   ok(cnt > 5 && bad === 0, `setiap setup: SL di sisi rugi, TP1 < TP2 < TP3 searah (${cnt} setup, ${bad} salah)`);
 }
 
+console.log('Scanner sinyal');
+{
+  const SC = require('../js/scanner.js');
+  const tfMs = 3600e3;
+  const mk = (n, now) => Array.from({ length: n }, (_, i) => ({ time: now - (n - i) * tfMs, open: 1, high: 1, low: 1, close: 1, volume: 1 }));
+  const now = Date.UTC(2025, 0, 1, 10, 30);
+  const open = mk(5, now).concat([{ time: Math.floor(now / tfMs) * tfMs, open: 1, high: 1, low: 1, close: 1, volume: 1 }]);
+  ok(SC.closedBars(open, tfMs, now).length === 5 && SC.closedBars(open.slice(0, 5), tfMs, now).length === 5, 'candle yang belum close dibuang');
+  let p = 100, seed = 21;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const wb = [];
+  for (let i = 0; i < 3000; i++) {
+    const o = p; let h = p, l = p;
+    for (let k = 0; k < 20; k++) { p *= 1 + (rnd() - 0.5) * 0.004 + 0.00002; h = Math.max(h, p); l = Math.min(l, p); }
+    wb.push({ time: Date.UTC(2024, 0, 1) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 1 });
+  }
+  for (const key of ['ema', 'mytt']) {
+    const ad = SC.ADAPTERS[key];
+    const code = EXAMPLES.find((e) => e.key === ad.exampleKey).code;
+    let n = 0, bad = 0;
+    const st = {};
+    for (let end = 600; end <= wb.length; end += 5) {
+      const s = SC.evaluate(key, code, wb.slice(end - 600, end), { tf: '1h', symbol: 'TESTUSDT' });
+      if (!s) continue;
+      n++;
+      st[s.status] = (st[s.status] || 0) + 1;
+      const d = s.dir;
+      if (!((s.entry - s.sl) * d > 0 && (s.tp1 - s.entry) * d > 0 && (s.tp2 - s.tp1) * d > 0 && (s.tp3 - s.tp2) * d > 0 && s.age >= 0 && s.key.includes('TESTUSDT'))) bad++;
+    }
+    ok(n > 3 && bad === 0, `${ad.label}: sinyal terdeteksi dengan level konsisten (${n} titik, ${JSON.stringify(st)}, ${bad} salah)`);
+  }
+  let err = '';
+  try { SC.evaluate('ema', 'strategy("x")\nplot(close)', wb.slice(0, 300), { tf: '1h' }); } catch (e) { err = e.message; }
+  ok(/tidak ditemukan|belum dideklarasikan/.test(err), 'script yang tidak cocok memberi pesan error jelas: ' + err);
+}
+
 console.log('Pesan error');
 {
   const cases = [

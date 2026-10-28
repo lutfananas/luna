@@ -12,6 +12,7 @@ Dashboard trading pribadi ala TradingView yang berjalan sepenuhnya di browser An
 - **SATTAM | CRT+TBS** — indikator Candle Range Theory + Turtle Body Soup (HTF otomatis, key level OB/FVG/OHP/OLP, 3 entry model, daily bias, kill zone, Donchian 2H) beserta versi strategy-nya. Lihat [docs/CRT-TBS.md](docs/CRT-TBS.md).
 - **MyTT Trend Pullback** + indikator **MyTT KDJ + DMI** — rumus BBI, KDJ, DMI (versi 通达信) dan TAQ dari [MyTT](https://github.com/mpquant/MyTT), ditulis ulang di Pine. Ikut tren (BBI naik, PDI > MDI, ADX ≥ 20), masuk saat KDJ golden cross setelah J < 20; SL di luar swing, TP1–TP3 di zona pivot/TAQ.
 - **EMA Cross Strategy** — entry limit di zona EMA, SL di luar swing, TP1–TP3 di zona resistance/support.
+- **📡 Scanner sinyal** (tab Sinyal di kanan): menjalankan EMA Cross zona atau MyTT di koin Favorit + Top 30/50/100 pada 15m/1H/4H, hanya memakai candle yang sudah close. Setiap titik entry baru tampil sebagai kartu (Entry, SL, TP1–TP3, R) dengan notifikasi browser + bunyi; mode **Online** memindai otomatis tiap candle close. Klik kartu untuk membuka chart-nya.
 - Alat uji di folder `tools/`: `tune-crt.js` (grid + verifikasi out-of-sample) dan `robust-crt.js` (banyak koin + walk-forward).
 - Semua script & pengaturan tersimpan di browser (localStorage). Bisa **ekspor/impor** ke file JSON.
 
@@ -94,6 +95,7 @@ js/pine-ext.js      timeframe/HTF, array, objek gambar (box/line/label/table)
 js/draw-layer.js    renderer objek gambar di chart + tabel
 js/scripts-crt.js   SATTAM CRT+TBS (indikator & strategy)
 js/scripts-mytt.js  MyTT KDJ + DMI (indikator) & MyTT Trend Pullback (strategy)
+js/scanner.js       scanner sinyal multi-koin (EMA Cross zona / MyTT)
 js/ta.js            library indikator (ta.*)
 js/backtest.js      mesin backtest (strategy.*) + metrik
 js/data.js          Binance REST/WebSocket, CSV, data demo

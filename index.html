@@ -118,6 +118,7 @@
     <aside class="sidebar">
       <nav class="tabs" data-tabs="side">
         <button data-tab="watch" class="active">★ Koin</button>
+        <button data-tab="signal">📡 Sinyal <span id="sig-badge" class="badge hidden"></span></button>
         <button data-tab="scripts">Script</button>
         <button data-tab="editor">Editor</button>
         <button data-tab="help">Bantuan</button>
@@ -131,6 +132,27 @@
           <div class="watch-row watch-header"><span></span><span>Koin</span><span>Harga</span><span>24j</span></div>
           <div id="watch-list" class="watch-list"></div>
           <div id="watch-info" class="watch-info muted"></div>
+        </div>
+
+        <div data-pane="signal" class="pane signal-pane">
+          <div class="sig-controls">
+            <label>Strategi <select id="sig-strat"></select></label>
+            <label>TF <select id="sig-tf"><option>15m</option><option selected>1h</option><option>4h</option></select></label>
+            <label>Koin <select id="sig-universe">
+              <option value="fav">Favorit saja</option>
+              <option value="30" selected>Favorit + Top 30</option>
+              <option value="50">Favorit + Top 50</option>
+              <option value="100">Favorit + Top 100</option>
+            </select></label>
+          </div>
+          <div class="sig-controls">
+            <label class="sig-toggle" title="Scan otomatis setiap candle close"><input id="sig-online" type="checkbox" /> Online</label>
+            <label class="sig-toggle" title="Notifikasi browser + bunyi saat ada sinyal baru"><input id="sig-notify" type="checkbox" /> 🔔</label>
+            <button id="sig-scan" class="primary">Scan sekarang</button>
+          </div>
+          <div id="sig-status" class="sig-status muted">Belum di-scan.</div>
+          <div id="sig-list" class="sig-list"></div>
+          <div class="watch-info muted">Hanya candle yang sudah close (tidak repaint). Bukan saran keuangan — cek chart sebelum entry.</div>
         </div>
 
         <div data-pane="scripts" class="pane">
@@ -164,6 +186,7 @@
         <div data-pane="help" class="pane help">
           <h3>Cara pakai</h3>
           <ol>
+            <li>Tab <b>📡 Sinyal</b>: pilih strategi, timeframe dan daftar koin, klik <b>Scan sekarang</b> atau nyalakan <b>Online</b> (scan otomatis tiap candle close) dan 🔔 untuk notifikasi. Klik kartu sinyal untuk membuka chart-nya.</li>
             <li>Klik koin di tab <b>★ Koin</b> (favorit + top 100), atau klik tombol simbol / tekan <kbd>/</kbd> untuk mencari dari semua pair Binance. Pilih timeframe.</li>
             <li>Centang script di tab <b>Script</b> untuk menampilkannya di chart. Klik ⚙ untuk ubah input.</li>
             <li>Buat / ubah script di tab <b>Editor</b> dengan sintaks mirip Pine Script v5.</li>
@@ -216,6 +239,7 @@
   <script src="js/scripts-crt.js"></script>
   <script src="js/scripts-mytt.js"></script>
   <script src="js/scripts.js"></script>
+  <script src="js/scanner.js"></script>
   <script src="js/data.js"></script>
   <script src="js/app.js"></script>
 </body>
