@@ -486,6 +486,13 @@ barcolor(naikBeruntun >= 4 ? color.lime : na)
       { key: 'crt-strat', name: 'SATTAM | CRT+TBS Strategy', enabled: false, code: CRT.strategy },
     );
   }
+  const MYTT = root.LunaMyTT || (typeof require !== 'undefined' ? require('./scripts-mytt.js') : null);
+  if (MYTT) {
+    EXAMPLES.push(
+      { key: 'mytt-ind', name: 'MyTT KDJ + DMI', enabled: false, code: MYTT.indicator },
+      { key: 'mytt-strat', name: 'MyTT Trend Pullback', enabled: false, code: MYTT.strategy },
+    );
+  }
   // kode lama contoh bawaan: script tersimpan yang masih persis sama (belum diedit pengguna)
   // diperbarui otomatis ke versi baru
   const LEGACY = {
