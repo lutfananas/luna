@@ -54,6 +54,11 @@
       if (S.scripts.some((x) => x.name === e.name)) continue; // sudah ada (mis. data browser terhapus sebagian)
       S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: e.enabled, inputs: {} });
     }
+    // contoh bawaan yang diperbarui: ganti hanya jika kode tersimpan masih persis versi lama
+    for (const e of Examples.EXAMPLES) {
+      const olds = (Examples.LEGACY && Examples.LEGACY[e.key]) || [];
+      for (const sc of S.scripts) if (olds.some((o) => o.trim() === String(sc.code).trim())) sc.code = e.code;
+    }
     store.set('seenExamples', [...seen]);
     store.set('scripts', S.scripts);
   }
@@ -295,9 +300,14 @@
     const sel = selectedStrategyResult();
     if (sel) {
       const st = sel.res.strategy;
+      const seenEntry = new Set(); // partial exit = beberapa trade dari satu entry → satu marker entry saja
       const mk = (t, open) => {
         const long = t.dir > 0;
-        cm.push({ i: t.entryBar, m: { time: ct(bars[t.entryBar].time), position: long ? 'belowBar' : 'aboveBar', color: long ? '#2962FF' : '#F23645', shape: long ? 'arrowUp' : 'arrowDown', text: t.entryId } });
+        const ek = t.entryId + '@' + t.entryBar;
+        if (!seenEntry.has(ek)) {
+          seenEntry.add(ek);
+          cm.push({ i: t.entryBar, m: { time: ct(bars[t.entryBar].time), position: long ? 'belowBar' : 'aboveBar', color: long ? '#2962FF' : '#F23645', shape: long ? 'arrowUp' : 'arrowDown', text: t.entryId } });
+        }
         if (!open) {
           cm.push({ i: t.exitBar, m: { time: ct(bars[t.exitBar].time), position: long ? 'aboveBar' : 'belowBar', color: '#B2B5BE', shape: long ? 'arrowDown' : 'arrowUp', text: `${t.exitId} ${t.pnl >= 0 ? '+' : ''}${fmt(t.pnl, 2)}` }, exit: true });
         }

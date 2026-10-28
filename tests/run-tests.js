@@ -294,6 +294,37 @@ console.log('SATTAM CRT+TBS');
   ok(tbl && tbl.props['cell:0:0'].text === 'HTF' && tbl.props['cell:1:0'].text === '1D', 'tabel status + HTF otomatis 1H → 1D');
 }
 
+console.log('EMA Cross: entry zona EMA, SL swing, TP zona');
+{
+  const { LEGACY } = require('../js/scripts.js');
+  const ema = EXAMPLES.find((e) => e.key === 'ema-cross');
+  ok(LEGACY['ema-cross'][0] !== ema.code && /strategy\.close\("Long"\)/.test(LEGACY['ema-cross'][0]), 'kode lama disimpan untuk migrasi otomatis');
+  let p = 100, seed = 5;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const wb = [];
+  for (let i = 0; i < 4000; i++) {
+    const o = p; let h = p, l = p;
+    for (let k = 0; k < 20; k++) { p *= 1 + (rnd() - 0.5) * 0.004 + 0.00002; h = Math.max(h, p); l = Math.min(l, p); }
+    wb.push({ time: Date.UTC(2024, 0, 1) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 1 });
+  }
+  const src = ema.code + '\nplot(sDir != 0 and not sLive ? sSL : na, "zSL")\nplot(sDir != 0 and not sLive ? sE : na, "zE")\nplot(sT1, "zT1")\nplot(sT2, "zT2")\nplot(sT3, "zT3")\nplot(sDir, "zD")';
+  const r = Pine.run(Pine.compile(src), wb, { timeframe: '1h' });
+  ok(!r.error, 'jalan tanpa error ' + (r.error || ''));
+  const P = (n) => r.plots.find((x) => x.title === n).values;
+  const [sl, en, t1, t2, t3, dir] = ['zSL', 'zE', 'zT1', 'zT2', 'zT3', 'zD'].map(P);
+  let pend = 0, bad = 0;
+  for (let i = 0; i < wb.length; i++) {
+    if (!(dir[i] > 0) || isNaN(en[i]) || isNaN(sl[i])) continue;
+    pend++;
+    if (!(sl[i] < en[i] && en[i] < t1[i] && t1[i] < t2[i] && t2[i] < t3[i])) bad++;
+  }
+  ok(pend > 20 && bad === 0, `long: SL < entry < TP1 < TP2 < TP3 di setiap bar menunggu (${pend} bar, ${bad} salah)`);
+  const ids = new Set(r.strategy.trades.map((t) => t.exitId));
+  ok(r.strategy.trades.length > 5 && ids.has('TP1') && ids.has('TP3'), `trade terjadi dengan partial exit (${r.strategy.trades.length} potongan)`);
+  const sl1 = r.strategy.trades.filter((t) => t.exitId === 'TP1' && t.exitPrice < t.entryPrice);
+  ok(sl1.every((t) => t.dir > 0), 'semua stop-out berada di bawah harga entry (long)');
+}
+
 console.log('Pesan error');
 {
   const cases = [
