@@ -136,6 +136,25 @@ if bar_index == 10
   ok(!hitEarlier, 'exit pada bar pertama yang menyentuh level');
 }
 {
+  // partial exit: qty_percent dihitung dari ukuran awal entry, SL berlaku untuk sisa posisi
+  const t0 = Date.UTC(2024, 0, 1);
+  const mk = (o, h, l, c) => ({ open: o, high: h, low: l, close: c, volume: 1 });
+  const path = [mk(100, 100.5, 99.5, 100), mk(100, 100.5, 99.5, 100), mk(100, 101.5, 99.8, 101), mk(101, 102.5, 100.8, 102), mk(102, 102.2, 98, 98.5), mk(98.5, 99, 98, 98.5)];
+  const pb = path.map((b, k) => ({ ...b, time: t0 + k * 3600e3 }));
+  const src = `strategy("t", initial_capital=1000)
+if bar_index == 0
+    strategy.entry("L", strategy.long, qty=10)
+    strategy.exit("T1", "L", qty_percent=50, limit=101, stop=99)
+    strategy.exit("T2", "L", qty_percent=30, limit=102, stop=99)
+    strategy.exit("T3", "L", qty_percent=100, limit=110, stop=99)`;
+  const r = Pine.run(Pine.compile(src), pb, { timeframe: '1h' });
+  const tr = r.strategy.trades;
+  const q = (id) => tr.filter((t) => t.exitId === id).reduce((a, t) => a + t.qty, 0);
+  ok(tr.length === 3 && near(q('T1'), 5) && near(q('T2'), 3) && near(q('T3'), 2), `partial exit 50/30/sisa (${tr.map((t) => t.exitId + ':' + t.qty).join(' ')})`);
+  ok(near(tr.find((t) => t.exitId === 'T1').exitPrice, 101) && near(tr.find((t) => t.exitId === 'T2').exitPrice, 102) && near(tr.find((t) => t.exitId === 'T3').exitPrice, 99), 'harga TP1, TP2, lalu SL untuk sisa');
+  ok(r.strategy.openTrades.length === 0, 'posisi tertutup penuh');
+}
+{
   // komisi persen
   const r = run(`strategy("t", commission_value=0.1)
 if bar_index == 10
@@ -260,9 +279,10 @@ console.log('SATTAM CRT+TBS');
     for (let k = 0; k < 30; k++) { p *= 1 + (rnd() - 0.5) * 0.003; h = Math.max(h, p); l = Math.min(l, p); }
     rwBars.push({ time: Date.UTC(2024, 0, 1) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 100 });
   }
-  const runOn = (src, b) => Pine.run(Pine.compile(src), b, { timeframe: '1h' });
+  const runOn = (src, b, inputs) => Pine.run(Pine.compile(src), b, { timeframe: '1h', inputs });
   const ind = runOn(CRT.indicator, rwBars);
-  const st = runOn(CRT.strategy, rwBars);
+  // default strategy sudah di-tuning (sangat selektif); uji mesin trade dengan filter longgar
+  const st = runOn(CRT.strategy, rwBars, { 'Entry Model': 'All', 'Kill Zones Only (New York time)': false });
   ok(!ind.error && !st.error, 'indikator & strategy jalan ' + (ind.error || st.error || ''));
   const sigs = (r, upto) => r.drawings.label.filter((l) => /^(SELL|BUY)/.test(l.props.text) && l.created < upto).map((l) => l.created + ':' + l.props.text);
   ok(sigs(ind, 1e9).length > 5, `sinyal muncul (${sigs(ind, 1e9).length})`);
@@ -272,6 +292,82 @@ console.log('SATTAM CRT+TBS');
   ok(JSON.stringify(sigs(cut, K)) === JSON.stringify(sigs(ind, K)), 'tidak repaint: sinyal sebelum bar K sama dengan/ tanpa data masa depan');
   const tbl = ind.drawings.table[0];
   ok(tbl && tbl.props['cell:0:0'].text === 'HTF' && tbl.props['cell:1:0'].text === '1D', 'tabel status + HTF otomatis 1H → 1D');
+}
+
+console.log('EMA Cross: entry zona EMA, SL swing, TP zona');
+{
+  const { LEGACY } = require('../js/scripts.js');
+  const ema = EXAMPLES.find((e) => e.key === 'ema-cross');
+  ok(LEGACY['ema-cross'][0] !== ema.code && /strategy\.close\("Long"\)/.test(LEGACY['ema-cross'][0]), 'kode lama disimpan untuk migrasi otomatis');
+  let p = 100, seed = 5;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const wb = [];
+  for (let i = 0; i < 4000; i++) {
+    const o = p; let h = p, l = p;
+    for (let k = 0; k < 20; k++) { p *= 1 + (rnd() - 0.5) * 0.004 + 0.00002; h = Math.max(h, p); l = Math.min(l, p); }
+    wb.push({ time: Date.UTC(2024, 0, 1) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 1 });
+  }
+  const src = ema.code + '\nplot(sDir != 0 and not sLive ? sSL : na, "zSL")\nplot(sDir != 0 and not sLive ? sE : na, "zE")\nplot(sT1, "zT1")\nplot(sT2, "zT2")\nplot(sT3, "zT3")\nplot(sDir, "zD")';
+  const r = Pine.run(Pine.compile(src), wb, { timeframe: '1h' });
+  ok(!r.error, 'jalan tanpa error ' + (r.error || ''));
+  const P = (n) => r.plots.find((x) => x.title === n).values;
+  const [sl, en, t1, t2, t3, dir] = ['zSL', 'zE', 'zT1', 'zT2', 'zT3', 'zD'].map(P);
+  let pend = 0, bad = 0;
+  for (let i = 0; i < wb.length; i++) {
+    if (!(dir[i] > 0) || isNaN(en[i]) || isNaN(sl[i])) continue;
+    pend++;
+    if (!(sl[i] < en[i] && en[i] < t1[i] && t1[i] < t2[i] && t2[i] < t3[i])) bad++;
+  }
+  ok(pend > 20 && bad === 0, `long: SL < entry < TP1 < TP2 < TP3 di setiap bar menunggu (${pend} bar, ${bad} salah)`);
+  const ids = new Set(r.strategy.trades.map((t) => t.exitId));
+  ok(r.strategy.trades.length > 5 && ids.has('TP1') && ids.has('TP3'), `trade terjadi dengan partial exit (${r.strategy.trades.length} potongan)`);
+  const sl1 = r.strategy.trades.filter((t) => t.exitId === 'TP1' && t.exitPrice < t.entryPrice);
+  ok(sl1.every((t) => t.dir > 0), 'semua stop-out berada di bawah harga entry (long)');
+}
+
+console.log('MyTT: rumus KDJ / DMI / BBI & rencana trade');
+{
+  const M = require('../js/scripts-mytt.js');
+  const wb = [];
+  let p = 50, seed = 9;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 3000; i++) {
+    const o = p; let h = p, l = p;
+    for (let k = 0; k < 20; k++) { p *= 1 + (rnd() - 0.5) * 0.004 + 0.00001; h = Math.max(h, p); l = Math.min(l, p); }
+    wb.push({ time: Date.UTC(2024, 0, 1) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 1 });
+  }
+  const ri = Pine.run(Pine.compile(M.indicator + '\nplot(bbi, "zBBI")'), wb, { timeframe: '1h' });
+  ok(!ri.error, 'indikator jalan ' + (ri.error || ''));
+  const P = (r, n) => r.plots.find((x) => x.title === n).values;
+  // referensi manual (definisi MyTT): EMA ala pandas adjust=False, SUM/MA rolling
+  const C = wb.map((b) => b.close), H = wb.map((b) => b.high), L = wb.map((b) => b.low), n = wb.length;
+  const ema = (x, len) => { const a = 2 / (len + 1); const o = []; let prev; for (let i = 0; i < x.length; i++) { if (isNaN(x[i])) { o.push(NaN); continue; } prev = prev === undefined ? x[i] : a * x[i] + (1 - a) * prev; o.push(prev); } return o; };
+  const roll = (x, len, f) => x.map((_, i) => (i < len - 1 ? NaN : f(x.slice(i - len + 1, i + 1))));
+  const sum = (a) => a.reduce((s, v) => s + v, 0);
+  const rsv = C.map((c, i) => { if (i < 8) return NaN; const lo = Math.min(...L.slice(i - 8, i + 1)), hi = Math.max(...H.slice(i - 8, i + 1)); return ((c - lo) / (hi - lo)) * 100; });
+  const K = ema(rsv, 5), D = ema(K, 5), J = K.map((k, i) => 3 * k - 2 * D[i]);
+  const tr = C.map((c, i) => (i ? Math.max(H[i] - L[i], Math.abs(H[i] - C[i - 1]), Math.abs(L[i] - C[i - 1])) : H[i] - L[i]));
+  const hd = H.map((h, i) => (i ? h - H[i - 1] : 0)), ld = L.map((l, i) => (i ? L[i - 1] - l : 0));
+  const TR = roll(tr, 14, sum), DMP = roll(hd.map((v, i) => (v > 0 && v > ld[i] ? v : 0)), 14, sum), DMM = roll(ld.map((v, i) => (v > 0 && v > hd[i] ? v : 0)), 14, sum);
+  const PDI = DMP.map((v, i) => (v * 100) / TR[i]), MDI = DMM.map((v, i) => (v * 100) / TR[i]);
+  const ADX = roll(PDI.map((v, i) => (Math.abs(MDI[i] - v) / (v + MDI[i])) * 100), 6, (a) => sum(a) / 6);
+  const BBI = C.map((_, i) => [3, 6, 12, 20].reduce((s, m) => s + (i < m - 1 ? NaN : sum(C.slice(i - m + 1, i + 1)) / m), 0) / 4);
+  const maxDiff = (a, b) => { let m = 0; for (let i = n - 500; i < n; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; };
+  ok(maxDiff(P(ri, 'K'), K) < 1e-6 && maxDiff(P(ri, 'D'), D) < 1e-6 && maxDiff(P(ri, 'J'), J) < 1e-6, 'KDJ sama dengan rumus MyTT');
+  ok(maxDiff(P(ri, 'PDI'), PDI) < 1e-6 && maxDiff(P(ri, 'MDI'), MDI) < 1e-6 && maxDiff(P(ri, 'ADX'), ADX) < 1e-6, 'DMI (PDI/MDI/ADX) sama dengan rumus MyTT');
+  ok(maxDiff(P(ri, 'zBBI'), BBI) < 1e-9, 'BBI sama dengan rumus MyTT');
+
+  const rs = Pine.run(Pine.compile(M.strategy + '\nplot(newSetup ? tDir : na, "zD")\nplot(tSL, "zSL")\nplot(tE, "zE")\nplot(tT1, "z1")\nplot(tT2, "z2")\nplot(tT3, "z3")'), wb, { timeframe: '1h', inputs: { 'Izinkan Short': true } });
+  ok(!rs.error, 'strategy jalan ' + (rs.error || ''));
+  const [d, sl, e, t1, t2, t3] = ['zD', 'zSL', 'zE', 'z1', 'z2', 'z3'].map((k) => P(rs, k));
+  let cnt = 0, bad = 0;
+  for (let i = 0; i < n; i++) {
+    if (!(d[i] === 1 || d[i] === -1)) continue;
+    cnt++;
+    const s = d[i];
+    if (!((e[i] - sl[i]) * s > 0 && (t1[i] - e[i]) * s > 0 && (t2[i] - t1[i]) * s > 0 && (t3[i] - t2[i]) * s > 0)) bad++;
+  }
+  ok(cnt > 5 && bad === 0, `setiap setup: SL di sisi rugi, TP1 < TP2 < TP3 searah (${cnt} setup, ${bad} salah)`);
 }
 
 console.log('Pesan error');

@@ -107,6 +107,7 @@
       this.exits.set(String(id), {
         id: String(id), from: fromEntry === undefined || fromEntry === null ? '' : String(fromEntry),
         profit: num(profit, NaN), limit: num(limit, NaN), loss: num(loss, NaN), stop: num(stop, NaN),
+        qty: num(qty, NaN), qtyPercent: num(qtyPercent, NaN),
         comment, armed: prev ? prev.armed : false,
       });
     }
@@ -135,13 +136,15 @@
       const comm = this.commission(qty, price);
       this.commissionPaid += comm;
       this.realized -= comm;
-      this.entries.push({ id: o.id, dir: o.dir, qty, price, bar: i, time: this.bars[i].time, comm, comment: o.comment });
+      this.entries.push({ id: o.id, dir: o.dir, qty, origQty: qty, price, bar: i, time: this.bars[i].time, comm, comment: o.comment });
       return true;
     }
 
     closeEntries(list, price, i, exitId, comment, fraction) {
-      for (const e of list) {
-        const f = fraction === undefined ? 1 : fraction;
+      for (const e of list.slice()) {
+        let f = fraction === undefined ? 1 : typeof fraction === 'function' ? fraction(e) : fraction;
+        if (!(f > 0)) continue;
+        if (f > 1 - 1e-9) f = 1;
         const qty = e.qty * f;
         const comm = this.commission(qty, price);
         const entryComm = e.comm * f;
@@ -166,6 +169,18 @@
       if (!list.length) return;
       const side = -Math.sign(this.positionSize);
       this.closeEntries(list, this.slip(price, side), i, o.id === null ? 'Close all' : 'Close ' + o.id, o.comment, Math.min(1, o.qtyPercent / 100));
+    }
+
+    // bagian posisi yang ditutup sebuah strategy.exit:
+    // qty_percent = persen dari ukuran AWAL entry (mis. 50/30/100 → 50%, 30%, sisanya)
+    exitFraction(x, list) {
+      if (!isNa(x.qty) && x.qty > 0) {
+        let q = 0;
+        for (const e of list) q += e.qty;
+        return Math.min(1, x.qty / q);
+      }
+      if (!isNa(x.qtyPercent) && x.qtyPercent < 100) return (e) => Math.min(1, (e.origQty * Math.max(0, x.qtyPercent)) / 100 / e.qty);
+      return 1;
     }
 
     cleanupExits() {
@@ -254,7 +269,7 @@
         } else {
           this.exits.delete(best.x.id);
           const d = best.list[0].dir;
-          this.closeEntries(best.list, best.stop ? this.slip(best.price, -d) : best.price, i, best.x.id, best.x.comment);
+          this.closeEntries(best.list, best.stop ? this.slip(best.price, -d) : best.price, i, best.x.id, best.x.comment, this.exitFraction(best.x, best.list));
         }
       }
     }

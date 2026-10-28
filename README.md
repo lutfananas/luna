@@ -2,13 +2,17 @@
 
 Dashboard trading pribadi ala TradingView yang berjalan sepenuhnya di browser Anda:
 
-- **Chart candlestick** data Binance (semua pair spot, timeframe 1m–1w, sampai 20.000 bar) + update **live** via WebSocket.
+- **Watchlist ★ Koin** di sidebar: favorit + 100 koin USDT teratas (volume 24 jam) dengan harga realtime — klik untuk membuka chart.
+- **Chart candlestick** data Binance (pemilih koin dengan pencarian & favorit untuk semua pair spot, timeframe 1m–1w, sampai 20.000 bar) + update **live** via WebSocket.
 - **Script mirip Pine Script v5** — tulis indikator & strategi sendiri, tambahkan sesuka hati, ubah input lewat ⚙.
 - **Backtest otomatis** untuk setiap `strategy(...)`: net profit, win rate, profit factor, max drawdown, kurva equity vs buy & hold, daftar trade.
 - **Bar Replay** — mundur ke titik mana pun lalu putar ulang candle satu per satu (▶, →, ←, kecepatan 1x–30x). Hasil backtest ikut menyesuaikan posisi replay.
 - **Paper trading manual saat replay** — BUY / SELL / Tutup + Stop Loss / Take Profit, dengan statistik P&L sendiri.
 - Data juga bisa dari **file CSV** sendiri, atau **data Demo** (offline).
 - **SATTAM | CRT+TBS** — indikator Candle Range Theory + Turtle Body Soup (HTF otomatis, key level OB/FVG/OHP/OLP, 3 entry model, daily bias, kill zone, Donchian 2H) beserta versi strategy-nya. Lihat [docs/CRT-TBS.md](docs/CRT-TBS.md).
+- **MyTT Trend Pullback** + indikator **MyTT KDJ + DMI** — rumus BBI, KDJ, DMI (versi 通达信) dan TAQ dari [MyTT](https://github.com/mpquant/MyTT), ditulis ulang di Pine. Ikut tren (BBI naik, PDI > MDI, ADX ≥ 20), masuk saat KDJ golden cross setelah J < 20; SL di luar swing, TP1–TP3 di zona pivot/TAQ.
+- **EMA Cross Strategy** — entry limit di zona EMA, SL di luar swing, TP1–TP3 di zona resistance/support.
+- Alat uji di folder `tools/`: `tune-crt.js` (grid + verifikasi out-of-sample) dan `robust-crt.js` (banyak koin + walk-forward).
 - Semua script & pengaturan tersimpan di browser (localStorage). Bisa **ekspor/impor** ke file JSON.
 
 Tidak perlu server, tidak perlu install apa pun, tidak ada data yang dikirim ke mana-mana selain request harga ke Binance.
@@ -72,6 +76,7 @@ Mengikuti default TradingView: order market diisi di **open bar berikutnya** (at
 
 | Tombol | Fungsi |
 |---|---|
+| `/` | Pilih koin (cari dari semua pair Binance, ★ favorit) |
 | `R` | Masuk/keluar replay |
 | `Spasi` | Play / pause replay |
 | `→` / `←` | Maju / mundur 1 bar |
@@ -88,6 +93,7 @@ js/pine.js          penerjemah Pine-like → JavaScript + runtime
 js/pine-ext.js      timeframe/HTF, array, objek gambar (box/line/label/table)
 js/draw-layer.js    renderer objek gambar di chart + tabel
 js/scripts-crt.js   SATTAM CRT+TBS (indikator & strategy)
+js/scripts-mytt.js  MyTT KDJ + DMI (indikator) & MyTT Trend Pullback (strategy)
 js/ta.js            library indikator (ta.*)
 js/backtest.js      mesin backtest (strategy.*) + metrik
 js/data.js          Binance REST/WebSocket, CSV, data demo

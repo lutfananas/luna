@@ -50,8 +50,14 @@
     const seen = new Set(store.get('seenExamples', fresh ? [] : Examples.ORIGINAL_KEYS));
     for (const e of Examples.EXAMPLES) {
       if (seen.has(e.key)) continue;
-      S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: e.enabled, inputs: {} });
       seen.add(e.key);
+      if (S.scripts.some((x) => x.name === e.name)) continue; // sudah ada (mis. data browser terhapus sebagian)
+      S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: e.enabled, inputs: {} });
+    }
+    // contoh bawaan yang diperbarui: ganti hanya jika kode tersimpan masih persis versi lama
+    for (const e of Examples.EXAMPLES) {
+      const olds = (Examples.LEGACY && Examples.LEGACY[e.key]) || [];
+      for (const sc of S.scripts) if (olds.some((o) => o.trim() === String(sc.code).trim())) sc.code = e.code;
     }
     store.set('seenExamples', [...seen]);
     store.set('scripts', S.scripts);
@@ -294,9 +300,14 @@
     const sel = selectedStrategyResult();
     if (sel) {
       const st = sel.res.strategy;
+      const seenEntry = new Set(); // partial exit = beberapa trade dari satu entry → satu marker entry saja
       const mk = (t, open) => {
         const long = t.dir > 0;
-        cm.push({ i: t.entryBar, m: { time: ct(bars[t.entryBar].time), position: long ? 'belowBar' : 'aboveBar', color: long ? '#2962FF' : '#F23645', shape: long ? 'arrowUp' : 'arrowDown', text: t.entryId } });
+        const ek = t.entryId + '@' + t.entryBar;
+        if (!seenEntry.has(ek)) {
+          seenEntry.add(ek);
+          cm.push({ i: t.entryBar, m: { time: ct(bars[t.entryBar].time), position: long ? 'belowBar' : 'aboveBar', color: long ? '#2962FF' : '#F23645', shape: long ? 'arrowUp' : 'arrowDown', text: t.entryId } });
+        }
         if (!open) {
           cm.push({ i: t.exitBar, m: { time: ct(bars[t.exitBar].time), position: long ? 'aboveBar' : 'belowBar', color: '#B2B5BE', shape: long ? 'arrowDown' : 'arrowUp', text: `${t.exitId} ${t.pnl >= 0 ? '+' : ''}${fmt(t.pnl, 2)}` }, exit: true });
         }
@@ -357,6 +368,14 @@
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
+  // desimal nilai indikator di legend: ikuti harga koin (PEPE butuh 8 desimal, RSI cukup 2–4)
+  function legendDec(v) {
+    const a = Math.abs(v);
+    if (a >= 1000) return 2;
+    if (a >= 1) return Math.min(Math.max(S.priceDec, 2), 4);
+    return Math.max(S.priceDec, 4);
+  }
+
   function renderLegend(param) {
     const n = S.bars.length;
     if (!n) { $('legend').innerHTML = ''; return; }
@@ -374,7 +393,7 @@
       if (!s.title) continue;
       const pt = s.pts[i];
       if (!groups.has(s.script)) groups.set(s.script, []);
-      groups.get(s.script).push(`<b style="color:${esc(pt && pt.color && pt.color !== GAP ? pt.color : s.color)}">${pt && pt.value !== undefined ? fmt(pt.value, Math.abs(pt.value) < 1000 ? Math.min(S.priceDec + 1, 4) : 2) : '—'}</b>`);
+      groups.get(s.script).push(`<b style="color:${esc(pt && pt.color && pt.color !== GAP ? pt.color : s.color)}">${pt && pt.value !== undefined ? fmt(pt.value, legendDec(pt.value)) : '—'}</b>`);
     }
     for (const [name, vals] of groups) html += `<div class="ind">${esc(name)} ${vals.join(' ')}</div>`;
     $('legend').innerHTML = html;
@@ -1084,8 +1103,8 @@
     if (loading) return;
     loading = true;
     stopLive();
-    settings.symbol = $('symbol').value.trim().toUpperCase() || 'BTCUSDT';
-    $('symbol').value = settings.symbol;
+    settings.symbol = (settings.symbol || 'BTCUSDT').toUpperCase();
+    $('symbol-label').textContent = settings.symbol;
     settings.count = +$('barcount').value;
     saveSettings();
     status(`Memuat ${settings.symbol} ${settings.tf}…`);
@@ -1179,10 +1198,9 @@
     if (tf === settings.tf) b.classList.add('active');
     tfBox.appendChild(b);
   }
-  $('symbol').value = settings.symbol;
+  $('symbol-label').textContent = settings.symbol;
   $('barcount').value = String(settings.count);
   $('btn-load').onclick = loadBinance;
-  $('symbol').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadBinance(); });
   $('btn-live').onclick = () => (S.liveStop ? stopLive() : startLive());
   $('btn-demo').onclick = () => {
     stopLive();
@@ -1197,6 +1215,7 @@
       const bars = Data.parseCSV(await f.text());
       stopLive();
       settings.symbol = f.name.replace(/\.[^.]+$/, '').toUpperCase();
+      $('symbol-label').textContent = settings.symbol;
       setBars(bars, 'csv');
       status(`CSV ${f.name}: ${bars.length} bar`);
     } catch (err) {
@@ -1238,10 +1257,255 @@
     });
   })();
 
+  // ------------------------------------------------------------------
+  // Pemilih koin
+  // ------------------------------------------------------------------
+  const picker = { list: null, live: false, loadedAt: 0, quote: store.get('pickerQuote', 'USDT'), sel: 0, rows: [] };
+  const favs = new Set(store.get('favorites', ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']));
+
+  function fmtVol(v) {
+    if (isNa(v)) return '—';
+    if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K';
+    return v.toFixed(0);
+  }
+  function fmtPx(v) {
+    if (isNa(v)) return '—';
+    const d = v >= 1000 ? 2 : v >= 1 ? 4 : v >= 0.01 ? 6 : 8;
+    return Number(v).toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: d });
+  }
+
+  async function openPicker() {
+    $('sym-modal').classList.remove('hidden');
+    const inp = $('sym-search');
+    inp.value = '';
+    inp.focus();
+    picker.sel = 0;
+    renderPicker();
+    if (!picker.list || Date.now() - picker.loadedAt > 60e3) {
+      $('sym-info').textContent = 'Memuat daftar koin dari Binance…';
+      await ensureSymbols(60e3);
+      renderPicker();
+      renderWatch(true);
+    }
+  }
+  function closePicker() {
+    $('sym-modal').classList.add('hidden');
+  }
+
+  function renderPicker() {
+    const list = picker.list || [];
+    // tombol filter mata uang quote (yang ada di data saja)
+    const quotes = ['★', ...Data.QUOTES.filter((q) => list.some((x) => x.quote === q)), 'Semua'];
+    if (!quotes.includes(picker.quote)) picker.quote = 'USDT';
+    $('sym-quotes').innerHTML = quotes.map((q) => `<button data-q="${q}" class="${q === picker.quote ? 'active' : ''}">${q === '★' ? '★ Favorit' : q}</button>`).join('');
+    const term = $('sym-search').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    let rows = list.filter((x) => {
+      if (term) return x.symbol.includes(term) || x.base.startsWith(term);
+      if (picker.quote === '★') return favs.has(x.symbol);
+      return picker.quote === 'Semua' || x.quote === picker.quote;
+    });
+    if (term) {
+      // saat mencari: pair USDT & kecocokan awal nama koin di atas
+      rows.sort((a, b) => (b.base === term) - (a.base === term) || (b.base.startsWith(term)) - (a.base.startsWith(term))
+        || (b.quote === 'USDT') - (a.quote === 'USDT') || (b.quoteVolume || 0) - (a.quoteVolume || 0));
+    } else {
+      rows.sort((a, b) => favs.has(b.symbol) - favs.has(a.symbol) || (b.quoteVolume || 0) - (a.quoteVolume || 0));
+    }
+    // simbol yang diketik persis tapi tidak ada di daftar (mis. Binance tidak terjangkau) tetap bisa dipilih
+    if (term.length >= 5 && !rows.some((x) => x.symbol === term)) {
+      const sp = Data.splitSymbol(term);
+      rows.unshift({ symbol: term, base: sp.base, quote: sp.quote, price: NaN, change: NaN, quoteVolume: NaN, typed: true });
+    }
+    picker.rows = rows.slice(0, 400);
+    picker.sel = Math.min(picker.sel, Math.max(0, picker.rows.length - 1));
+    $('sym-list').innerHTML = picker.rows.map((x, k) => `
+      <div class="sym-row ${k === picker.sel ? 'sel' : ''} ${x.symbol === settings.symbol ? 'cur' : ''}" data-k="${k}">
+        <span class="star ${favs.has(x.symbol) ? 'on' : ''}" data-fav="${x.symbol}" title="Favorit">★</span>
+        <span><b>${esc(x.base)}</b><span class="q">${x.quote ? '/' + esc(x.quote) : ''}</span>${x.typed ? ' <span class="q">(ketik)</span>' : ''}</span>
+        <span>${fmtPx(x.price)}</span>
+        <span class="${sign(x.change)}">${isNa(x.change) ? '—' : (x.change > 0 ? '+' : '') + x.change.toFixed(2) + '%'}</span>
+        <span class="muted">${fmtVol(x.quoteVolume)}</span>
+      </div>`).join('') || '<div class="empty">Tidak ada koin yang cocok.</div>';
+    const total = list.length;
+    $('sym-info').textContent = !picker.list ? 'Memuat…'
+      : picker.live ? `${total} pair aktif di Binance · urut volume 24 jam · ↑↓ Enter untuk memilih · ★ untuk favorit`
+        : 'Binance tidak terjangkau — menampilkan koin populer. Ketik simbol lengkap (mis. ARBUSDT) lalu Enter.';
+    const selEl = $('sym-list').querySelector('.sym-row.sel');
+    if (selEl) selEl.scrollIntoView({ block: 'nearest' });
+  }
+
+  function chooseSymbol(sym) {
+    closePicker();
+    if (!sym) return;
+    settings.symbol = sym;
+    $('symbol-label').textContent = sym;
+    renderWatch(true);
+    loadBinance();
+  }
+
+  $('symbol-btn').onclick = openPicker;
+  $('sym-close').onclick = closePicker;
+  $('sym-modal').addEventListener('mousedown', (e) => { if (e.target.id === 'sym-modal') closePicker(); });
+  $('sym-search').addEventListener('input', () => { picker.sel = 0; renderPicker(); });
+  $('sym-search').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closePicker(); e.stopPropagation(); }
+    else if (e.key === 'ArrowDown') { picker.sel = Math.min(picker.rows.length - 1, picker.sel + 1); renderPicker(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { picker.sel = Math.max(0, picker.sel - 1); renderPicker(); e.preventDefault(); }
+    else if (e.key === 'Enter') { const r = picker.rows[picker.sel]; chooseSymbol(r && r.symbol); }
+  });
+  $('sym-quotes').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-q]');
+    if (!b) return;
+    picker.quote = b.dataset.q;
+    store.set('pickerQuote', picker.quote);
+    $('sym-search').value = '';
+    picker.sel = 0;
+    renderPicker();
+    $('sym-search').focus();
+  });
+  $('sym-list').addEventListener('click', (e) => {
+    const star = e.target.closest('[data-fav]');
+    if (star) {
+      const s = star.dataset.fav;
+      if (favs.has(s)) favs.delete(s); else favs.add(s);
+      store.set('favorites', [...favs]);
+      renderPicker();
+      renderWatch(true);
+      startWatchStream();
+      return;
+    }
+    const row = e.target.closest('.sym-row[data-k]');
+    if (row) chooseSymbol(picker.rows[+row.dataset.k].symbol);
+  });
+
+  // ------------------------------------------------------------------
+  // Watchlist: favorit + 100 koin USDT teratas (volume 24 jam), klik untuk membuka chart
+  // ------------------------------------------------------------------
+  const STABLES = new Set(['USDC', 'FDUSD', 'TUSD', 'DAI', 'USDP', 'BUSD', 'EUR', 'AEUR', 'EURI', 'USDE', 'PYUSD', 'XUSD', 'BFUSD', 'USD1', 'RLUSD', 'UST', 'USTC', 'PAXG']);
+  const watch = { stop: null, streamKey: '', lastRender: 0, timer: null, prev: new Map(), loading: false };
+
+  async function ensureSymbols(maxAge) {
+    if (picker.list && picker.live && Date.now() - picker.loadedAt < maxAge) return;
+    const r = await Data.fetchSymbols();
+    picker.list = r.list;
+    picker.live = r.live;
+    picker.loadedAt = r.live ? Date.now() : 0;
+  }
+
+  function watchData() {
+    const all = picker.list || [];
+    const bySym = new Map(all.map((x) => [x.symbol, x]));
+    const top = all.filter((x) => x.quote === 'USDT' && !STABLES.has(x.base))
+      .sort((a, b) => (b.quoteVolume || 0) - (a.quoteVolume || 0)).slice(0, 100);
+    const fav = [...favs].map((sym) => bySym.get(sym) || Object.assign({ symbol: sym, price: NaN, change: NaN, quoteVolume: NaN }, Data.splitSymbol(sym)));
+    return { top, fav };
+  }
+
+  async function loadWatch(force) {
+    if (watch.loading) return;
+    watch.loading = true;
+    $('watch-info').textContent = 'Memuat daftar koin…';
+    try {
+      await ensureSymbols(force ? 0 : 5 * 60e3);
+    } finally {
+      watch.loading = false;
+    }
+    renderWatch(true);
+    startWatchStream();
+  }
+
+  // harga realtime hanya untuk koin yang tampil di watchlist
+  function startWatchStream() {
+    if (!picker.live) return;
+    const { top, fav } = watchData();
+    const syms = [...new Set([...fav.map((x) => x.symbol), ...top.map((x) => x.symbol)])].sort();
+    const key = syms.join(',');
+    if (key === watch.streamKey && watch.stop) return;
+    if (watch.stop) watch.stop();
+    watch.streamKey = key;
+    const bySym = new Map((picker.list || []).map((x) => [x.symbol, x]));
+    watch.stop = Data.subscribeTickers(syms, (t) => {
+      const x = bySym.get(t.symbol);
+      if (!x) return;
+      x.price = t.price;
+      x.change = t.open ? ((t.price - t.open) / t.open) * 100 : x.change;
+      x.quoteVolume = t.quoteVolume;
+      renderWatch(false);
+    });
+  }
+
+  function watchVisible() {
+    return document.querySelector('[data-pane="watch"]').classList.contains('active') && !document.hidden;
+  }
+
+  function renderWatch(force) {
+    if (!force) {
+      // update realtime dibatasi ±1x per detik dan hanya saat panel terlihat
+      if (!watchVisible()) return;
+      const wait = 1000 - (Date.now() - watch.lastRender);
+      if (wait > 0) {
+        if (!watch.timer) watch.timer = setTimeout(() => { watch.timer = null; renderWatch(false); }, wait);
+        return;
+      }
+    }
+    watch.lastRender = Date.now();
+    const term = $('watch-search').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const match = (x) => !term || x.symbol.includes(term) || x.base.startsWith(term);
+    const { top, fav } = watchData();
+    const row = (x, rank) => {
+      const before = watch.prev.get(x.symbol);
+      const flash = isNa(before) || isNa(x.price) || before === x.price ? '' : x.price > before ? 'flash-up' : 'flash-down';
+      watch.prev.set(x.symbol, x.price);
+      return `<div class="watch-row ${x.symbol === settings.symbol ? 'cur' : ''}" data-sym="${esc(x.symbol)}" title="${esc(x.symbol)} — klik untuk membuka chart">
+        <span class="star ${favs.has(x.symbol) ? 'on' : ''}" data-fav="${esc(x.symbol)}" title="Favorit">★</span>
+        <span>${rank ? `<span class="rank">${rank}</span>` : ''}<b>${esc(x.base)}</b><span class="q">${x.quote && x.quote !== 'USDT' ? '/' + esc(x.quote) : ''}</span></span>
+        <span class="${flash}">${fmtPx(x.price)}</span>
+        <span><span class="chg ${sign(x.change)}">${isNa(x.change) ? '—' : (x.change > 0 ? '+' : '') + x.change.toFixed(2) + '%'}</span></span>
+      </div>`;
+    };
+    const favRows = fav.filter(match);
+    const topRows = top.map((x, k) => [x, k + 1]).filter(([x]) => match(x));
+    let html = '';
+    html += `<div class="watch-section">★ Favorit (${favRows.length})</div>`;
+    html += favRows.length ? favRows.map((x) => row(x)).join('') : `<div class="empty" style="padding:10px">${term ? 'Tidak ada yang cocok.' : 'Klik ★ di daftar bawah untuk menambah favorit.'}</div>`;
+    html += `<div class="watch-section">${picker.live ? 'Top 100 · volume 24 jam' : 'Koin populer'} (${topRows.length})</div>`;
+    html += topRows.map(([x, k]) => row(x, picker.live ? k : null)).join('');
+    if (!picker.live) html += (picker.list || []).filter((x) => !top.includes(x) && match(x)).map((x) => row(x)).join('');
+    const box = $('watch-list');
+    const scroll = box.scrollTop;
+    box.innerHTML = html;
+    box.scrollTop = scroll;
+    $('watch-info').textContent = !picker.list ? 'Memuat…'
+      : picker.live ? 'Harga realtime dari Binance · klik koin untuk membuka chart · ★ = favorit'
+        : 'Binance tidak terjangkau — daftar koin populer tanpa harga. Klik ↻ untuk mencoba lagi.';
+  }
+
+  $('watch-list').addEventListener('click', (e) => {
+    const star = e.target.closest('[data-fav]');
+    if (star) {
+      const sym = star.dataset.fav;
+      if (favs.has(sym)) favs.delete(sym); else favs.add(sym);
+      store.set('favorites', [...favs]);
+      renderWatch(true);
+      startWatchStream();
+      return;
+    }
+    const r = e.target.closest('.watch-row[data-sym]');
+    if (r && r.dataset.sym !== settings.symbol) chooseSymbol(r.dataset.sym);
+  });
+  $('watch-search').addEventListener('input', () => renderWatch(true));
+  $('watch-refresh').onclick = () => loadWatch(true);
+  document.querySelector('[data-tabs="side"] [data-tab="watch"]').addEventListener('click', () => renderWatch(true));
+  setInterval(() => { if (watchVisible()) loadWatch(false); }, 5 * 60e3); // segarkan peringkat top 100
+
   document.addEventListener('keydown', (e) => {
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toLowerCase();
+    if (!$('sym-modal').classList.contains('hidden')) return;
+    if (k === '/') { openPicker(); e.preventDefault(); return; }
     if (k === 'r') { R.active ? exitReplay() : enterReplay(); e.preventDefault(); return; }
     if (k === 'escape' && R.active) {
       if (R.picking && R.idx !== null) { R.picking = false; $('replay-hint').classList.add('hidden'); document.querySelector('.chart-wrap').classList.remove('picking'); applyData(R.idx); }
@@ -1264,6 +1528,7 @@
   renderGutter();
   $('btn-live').disabled = true;
   loadBinance();
+  loadWatch(false);
 
   // untuk debugging dari console browser
   window.Luna = { S, chart, runAll, setBars };

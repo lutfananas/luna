@@ -35,7 +35,50 @@ code, kbd { font-family: var(--mono); font-size: 12px; background: var(--panel-2
 .topbar { height: 46px; display: flex; align-items: center; gap: 14px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--panel); white-space: nowrap; overflow-x: auto; }
 .brand { font-weight: 700; font-size: 15px; letter-spacing: 0.3px; }
 .group { display: flex; align-items: center; gap: 6px; }
-#symbol { width: 110px; font-weight: 600; text-transform: uppercase; }
+.symbol-btn { font-weight: 700; min-width: 120px; justify-content: space-between; }
+.symbol-btn .caret { color: var(--muted); font-size: 11px; }
+
+/* ---------- pemilih koin ---------- */
+.modal { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, 0.55); display: flex; align-items: flex-start; justify-content: center; padding-top: 70px; }
+.modal-box { width: 560px; max-width: calc(100vw - 32px); max-height: calc(100vh - 110px); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
+.modal-head { display: flex; gap: 6px; padding: 10px; border-bottom: 1px solid var(--border); }
+.modal-head input { flex: 1; height: 34px; font-size: 14px; text-transform: uppercase; }
+.modal-head input::placeholder { text-transform: none; }
+.sym-quotes { display: flex; gap: 4px; padding: 8px 10px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.sym-quotes button { height: 24px; padding: 0 9px; font-size: 12px; }
+.sym-list { overflow-y: auto; flex: 1; min-height: 120px; }
+.sym-row { display: grid; grid-template-columns: 26px 1.3fr 1fr 0.8fr 1fr; align-items: center; gap: 6px; padding: 6px 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.sym-row > span:nth-child(n + 3) { text-align: right; }
+.sym-row:hover, .sym-row.sel { background: var(--panel-2); }
+.sym-row.cur { box-shadow: inset 3px 0 0 var(--accent); }
+.sym-header { cursor: default; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border); }
+.sym-header:hover { background: transparent; }
+.sym-row b { font-weight: 600; }
+.sym-row .q { color: var(--muted); }
+.star { color: #4a4f5c; cursor: pointer; font-size: 15px; line-height: 1; }
+.star.on { color: var(--yellow); }
+.watch-pane.active { display: flex; flex-direction: column; padding: 6px 0 0; }
+.watch-head { display: flex; gap: 6px; padding: 0 10px 6px; }
+.watch-head input { flex: 1; text-transform: uppercase; }
+.watch-head input::placeholder { text-transform: none; }
+.watch-list { flex: 1; overflow-y: auto; }
+.watch-row { display: grid; grid-template-columns: 22px 1fr 1fr 64px; align-items: center; gap: 6px; padding: 5px 10px; font-variant-numeric: tabular-nums; cursor: pointer; }
+.watch-row > span:nth-child(n + 3) { text-align: right; }
+.watch-row:hover { background: var(--panel-2); }
+.watch-row.cur { background: rgba(41, 98, 255, 0.16); box-shadow: inset 3px 0 0 var(--accent); }
+.watch-row .rank { color: var(--muted); font-size: 10px; margin-right: 4px; }
+.watch-header { cursor: default; color: var(--muted); font-size: 11px; border-bottom: 1px solid var(--border); }
+.watch-header:hover { background: transparent; }
+.watch-section { padding: 6px 10px 3px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; background: var(--bg); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
+.watch-row .chg { border-radius: 3px; padding: 1px 4px; font-size: 12px; }
+.watch-row .chg.pos { background: rgba(8, 153, 129, 0.15); }
+.watch-row .chg.neg { background: rgba(242, 54, 69, 0.15); }
+.watch-info { padding: 6px 10px; font-size: 11px; border-top: 1px solid var(--border); }
+.flash-up { animation: flashUp 0.8s; }
+.flash-down { animation: flashDown 0.8s; }
+@keyframes flashUp { from { color: #22ffbf; } }
+@keyframes flashDown { from { color: #ff6b78; } }
+.modal-foot { padding: 6px 12px; font-size: 11px; border-top: 1px solid var(--border); }
 .seg { display: inline-flex; gap: 2px; align-items: center; }
 .seg button { padding: 4px 7px; }
 #btn-live.on { color: #fff; background: var(--red); border-color: var(--red); }
