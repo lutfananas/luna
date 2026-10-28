@@ -407,6 +407,42 @@ console.log('Scanner sinyal');
   ok(/tidak ditemukan|belum dideklarasikan/.test(err), 'script yang tidak cocok memberi pesan error jelas: ' + err);
 }
 
+console.log('Data: fallback ke Binance Futures');
+(async () => {
+  const D = require('../js/data.js');
+  const calls = [];
+  const kl = (n) => Array.from({ length: n }, (_, i) => [Date.UTC(2025, 0, 1) + i * 3600e3, '1', '2', '0.5', '1.5', '10', 0]);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    calls.push(url);
+    const u = new URL(url);
+    const res = (status, body) => ({ ok: status === 200, status, json: async () => body, text: async () => JSON.stringify(body) });
+    if (u.host === 'fapi.binance.com') {
+      if (u.pathname === '/fapi/v1/ticker/24hr') return res(200, [{ symbol: 'XAUUSDT', openPrice: '3000', lastPrice: '3030', quoteVolume: '5e8', closeTime: Date.now() }, { symbol: 'BTCUSDT', openPrice: '1', lastPrice: '1', quoteVolume: '9e9', closeTime: Date.now() }]);
+      return res(200, kl(+u.searchParams.get('limit')));
+    }
+    if (u.pathname === '/api/v3/ticker/24hr') return res(200, [{ symbol: 'BTCUSDT', openPrice: '1', lastPrice: '1', quoteVolume: '1e9', closeTime: Date.now() }]);
+    if (u.searchParams.get('symbol') === 'BTCUSDT') return res(200, kl(+u.searchParams.get('limit')));
+    return res(400, { code: -1121, msg: 'Invalid symbol.' });
+  };
+  try {
+    const bars = await D.fetchBinance('NVDAUSDT', '1h', 300);
+    ok(bars.length === 300 && D.marketOf('NVDAUSDT') === 'futures' && calls.some((c) => c.includes('fapi.binance.com/fapi/v1/klines?symbol=NVDAUSDT')), 'pair yang tidak ada di spot diambil dari Futures');
+    const btc = await D.fetchBinance('BTCUSDT', '1h', 50);
+    ok(btc.length === 50 && D.marketOf('BTCUSDT') === 'spot' && !calls.some((c) => c.includes('fapi') && c.includes('BTCUSDT')), 'pair spot tetap memakai spot');
+    const sy = await D.fetchSymbols();
+    const xau = sy.list.find((x) => x.symbol === 'XAUUSDT');
+    ok(xau && xau.market === 'futures' && sy.list.filter((x) => x.symbol === 'BTCUSDT').length === 1 && D.marketOf('XAUUSDT') === 'futures', 'daftar pair memuat pair khusus Futures (XAUUSDT) tanpa dobel');
+    const urls = [];
+    globalThis.WebSocket = class { constructor(u) { urls.push(u); } close() {} };
+    const stop = D.subscribeTickers(['BTCUSDT', 'XAUUSDT', 'NVDAUSDT'], () => {});
+    stop();
+    ok(urls.length === 2 && urls.some((u) => u.startsWith('wss://fstream.binance.com/stream') && /xauusdt.*nvdausdt/.test(u)) && urls.some((u) => !u.includes('fstream') && u.includes('btcusdt')), 'harga realtime: spot & futures lewat koneksi masing-masing');
+    delete globalThis.WebSocket;
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+})().then(() => {
 console.log('Pesan error');
 {
   const cases = [
@@ -424,3 +460,4 @@ console.log('Pesan error');
 
 console.log(failed ? `\n${failed} tes GAGAL` : '\nSemua tes lulus');
 process.exit(failed ? 1 : 0);
+}).catch((e) => { console.log('  FAIL tes async error: ' + (e && e.stack)); process.exit(1); });

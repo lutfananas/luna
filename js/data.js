@@ -4,6 +4,12 @@
 
   const REST = ['https://data-api.binance.vision', 'https://api.binance.com', 'https://api1.binance.com'];
   const WS = ['wss://data-stream.binance.vision/ws', 'wss://stream.binance.com:9443/ws'];
+  // Binance Futures USDⓈ-M: untuk pair yang tidak ada di spot (mis. XAUUSDT emas, NVDAUSDT/SANDISKUSDT saham)
+  const FUT_REST = ['https://fapi.binance.com'];
+  const FUT_WS = ['wss://fstream.binance.com/ws'];
+  const market = new Map(); // simbol → 'spot' | 'futures' (dipelajari dari daftar pair / respons API)
+  const marketOf = (sym) => market.get(sym) || 'spot';
+  const isInvalidSymbol = (e) => /HTTP 400/.test(String(e && e.message)) && /-1121|Invalid symbol/i.test(String(e.message));
 
   const INTERVAL_MS = {
     '1m': 60e3, '3m': 180e3, '5m': 300e3, '15m': 900e3, '30m': 1800e3,
@@ -13,9 +19,9 @@
 
   const toBar = (k) => ({ time: k[0], open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] });
 
-  async function fetchJSON(path) {
+  async function fetchJSON(path, bases) {
     let lastErr;
-    for (const base of REST) {
+    for (const base of bases || REST) {
       try {
         const r = await fetch(base + path);
         if (!r.ok) {
@@ -36,12 +42,28 @@
   /** Ambil `total` candle terakhir dari Binance (dengan paginasi mundur). */
   async function fetchBinance(symbol, interval, total, onProgress) {
     symbol = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (marketOf(symbol) === 'spot') {
+      try {
+        return await fetchKlines(symbol, interval, total, onProgress, 'spot');
+      } catch (e) {
+        if (!isInvalidSymbol(e)) throw e;
+        // tidak ada di spot → coba Binance Futures
+        const bars = await fetchKlines(symbol, interval, total, onProgress, 'futures');
+        market.set(symbol, 'futures');
+        return bars;
+      }
+    }
+    return fetchKlines(symbol, interval, total, onProgress, 'futures');
+  }
+
+  async function fetchKlines(symbol, interval, total, onProgress, mkt) {
+    const fut = mkt === 'futures';
     let out = [];
     let endTime = null;
     while (out.length < total) {
       const limit = Math.min(1000, total - out.length);
-      const q = `/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}` + (endTime ? `&endTime=${endTime}` : '');
-      const rows = await fetchJSON(q);
+      const q = `${fut ? '/fapi/v1' : '/api/v3'}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}` + (endTime ? `&endTime=${endTime}` : '');
+      const rows = await fetchJSON(q, fut ? FUT_REST : REST);
       if (!rows.length) break;
       out = rows.map(toBar).concat(out);
       endTime = rows[0][0] - 1;
@@ -61,7 +83,8 @@
     let attempt = 0;
     const connect = () => {
       if (stopped) return;
-      const url = `${WS[attempt % WS.length]}/${stream}`;
+      const wsList = marketOf(symbol.toUpperCase()) === 'futures' ? FUT_WS : WS;
+      const url = `${wsList[attempt % wsList.length]}/${stream}`;
       ws = new WebSocket(url);
       ws.onopen = () => onStatus && onStatus('live');
       ws.onmessage = (ev) => {
@@ -172,13 +195,25 @@
     try {
       const rows = await fetchJSON('/api/v3/ticker/24hr?type=MINI');
       const out = [];
-      for (const r of rows) {
+      const add = (r, mkt) => {
         const qv = +r.quoteVolume;
-        if (!(qv > 0) || +r.closeTime < Date.now() - 2 * 86400e3) continue; // pair yang tidak aktif
+        if (!(qv > 0) || +r.closeTime < Date.now() - 2 * 86400e3) return; // pair yang tidak aktif
         const { base, quote } = splitSymbol(r.symbol);
         const open = +r.openPrice, last = +r.lastPrice;
-        out.push({ symbol: r.symbol, base, quote, price: last, change: open ? ((last - open) / open) * 100 : NaN, quoteVolume: qv });
-      }
+        out.push({ symbol: r.symbol, base, quote, price: last, change: open ? ((last - open) / open) * 100 : NaN, quoteVolume: qv, market: mkt });
+      };
+      for (const r of rows) add(r, 'spot');
+      const spot = new Set(out.map((x) => x.symbol));
+      for (const x of out) market.set(x.symbol, 'spot');
+      // pair yang hanya ada di Futures (emas, saham, dll.) — jika Futures bisa diakses
+      try {
+        const fr = await fetchJSON('/fapi/v1/ticker/24hr', FUT_REST);
+        for (const r of fr) {
+          if (spot.has(r.symbol) || !/USDT$|USDC$/.test(r.symbol)) continue;
+          market.set(r.symbol, 'futures');
+          add(r, 'futures');
+        }
+      } catch (e) { /* Futures tidak terjangkau: lewati */ }
       return { list: out, live: true };
     } catch (e) {
       return { list: POPULAR.map((b) => ({ symbol: b + 'USDT', base: b, quote: 'USDT', price: NaN, change: NaN, quoteVolume: NaN })), live: false, error: e.message };
@@ -190,12 +225,21 @@
    * onTick({symbol, price, open, quoteVolume}) dipanggil untuk tiap update. Mengembalikan fungsi stop.
    */
   function subscribeTickers(symbols, onTick, onStatus) {
+    const fut = symbols.filter((x) => marketOf(x) === 'futures');
+    const spot = symbols.filter((x) => marketOf(x) !== 'futures');
+    const stops = [];
+    if (spot.length) stops.push(tickerStream(spot, WS, onTick, onStatus));
+    if (fut.length) stops.push(tickerStream(fut, FUT_WS, onTick, null));
+    return () => stops.forEach((f) => f());
+  }
+
+  function tickerStream(symbols, wsList, onTick, onStatus) {
     const streams = symbols.slice(0, 200).map((x) => x.toLowerCase() + '@miniTicker').join('/');
     if (!streams) return () => {};
     let ws = null;
     let stopped = false;
     let attempt = 0;
-    const bases = WS.map((w) => w.replace(/\/ws$/, ''));
+    const bases = wsList.map((w) => w.replace(/\/ws$/, ''));
     const connect = () => {
       if (stopped) return;
       ws = new WebSocket(`${bases[attempt % bases.length]}/stream?streams=${streams}`);
@@ -218,7 +262,7 @@
     return () => { stopped = true; if (ws) ws.close(); };
   }
 
-  const api = { fetchBinance, fetchSymbols, subscribeTickers, splitSymbol, subscribe, parseCSV, demo, INTERVAL_MS, QUOTES };
+  const api = { fetchBinance, fetchSymbols, subscribeTickers, splitSymbol, subscribe, parseCSV, demo, INTERVAL_MS, QUOTES, marketOf };
   root.LunaData = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
