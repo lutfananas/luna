@@ -1500,6 +1500,211 @@
   document.querySelector('[data-tabs="side"] [data-tab="watch"]').addEventListener('click', () => renderWatch(true));
   setInterval(() => { if (watchVisible()) loadWatch(false); }, 5 * 60e3); // segarkan peringkat top 100
 
+  // ------------------------------------------------------------------
+  // Scanner sinyal (tab 📡 Sinyal): jalankan strategi di banyak koin, tampilkan titik entry
+  // ------------------------------------------------------------------
+  const Scanner = window.LunaScanner;
+  const sig = Object.assign({ strat: 'ema', tf: '1h', universe: '30', online: false, notify: false }, store.get('scanner', {}));
+  const scan = { running: false, timer: null, list: [], seen: new Set(store.get('scannerSeen', [])), newKeys: new Set(), unread: 0, nextAt: 0 };
+  $('sig-strat').innerHTML = Object.entries(Scanner.ADAPTERS).map(([k, a]) => `<option value="${k}">${esc(a.label)}</option>`).join('');
+  $('sig-strat').value = sig.strat;
+  $('sig-tf').value = sig.tf;
+  $('sig-universe').value = sig.universe;
+  $('sig-online').checked = sig.online;
+  $('sig-notify').checked = sig.notify;
+  const saveSig = () => store.set('scanner', sig);
+  const hhmm = (t) => new Date(t).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+  // pakai salinan script milik pengguna (beserta input yang diatur) bila ada, selain itu contoh bawaan
+  function scanCode(key) {
+    const ad = Scanner.ADAPTERS[key];
+    const sc = S.scripts.find((x) => x.name === ad.scriptName);
+    const ex = Examples.EXAMPLES.find((e) => e.key === ad.exampleKey);
+    return sc ? { code: sc.code, inputs: sc.inputs || {} } : { code: ex.code, inputs: {} };
+  }
+
+  async function scanUniverse() {
+    await ensureSymbols(10 * 60e3);
+    const { top, fav } = watchData();
+    const n = sig.universe === 'fav' ? 0 : +sig.universe;
+    return [...new Set([...fav.map((x) => x.symbol), ...top.slice(0, n).map((x) => x.symbol)])];
+  }
+
+  let audioCtx = null;
+  function beep() {
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+      o.connect(g).connect(audioCtx.destination);
+      o.start();
+      o.stop(audioCtx.currentTime + 0.4);
+    } catch (e) { /* abaikan */ }
+  }
+  function notifyNew(list) {
+    if (!sig.notify || !list.length) return;
+    beep();
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const s0 = list[0];
+    const title = list.length > 1 ? `${list.length} sinyal baru · ${sig.tf}` : `${s0.dir > 0 ? 'BUY' : 'SELL'} ${s0.symbol} · ${sig.tf}`;
+    const body = list.slice(0, 4).map((x) => `${x.dir > 0 ? 'BUY' : 'SELL'} ${x.symbol} @ ${fmtPx(x.entry)} · SL ${fmtPx(x.sl)} · TP1 ${fmtPx(x.tp1)}`).join('\n');
+    try { new Notification(title, { body, tag: 'luna-signal' }); } catch (e) { /* abaikan */ }
+  }
+
+  async function runScan() {
+    if (scan.running || !Scanner) return;
+    scan.running = true;
+    $('sig-scan').disabled = true;
+    const out = [];
+    let done = 0, errs = 0, lastErr = '', syms = [];
+    try {
+      syms = await scanUniverse();
+      if (!syms.length) throw new Error('Daftar koin kosong — tambahkan favorit (★) atau pilih Top N.');
+      const { code, inputs } = scanCode(sig.strat);
+      const tf = sig.tf, ms = Data.INTERVAL_MS[tf];
+      let next = 0;
+      const worker = async () => {
+        while (next < syms.length) {
+          const sym = syms[next++];
+          try {
+            const bars = Scanner.closedBars(await Data.fetchBinance(sym, tf, 600), ms);
+            const s = Scanner.evaluate(sig.strat, code, bars, { tf, symbol: sym, inputs });
+            if (s) out.push(s);
+          } catch (e) { errs++; lastErr = `${sym}: ${e.message}`; }
+          done++;
+          $('sig-status').textContent = `Scan ${done}/${syms.length} koin…`;
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+      // terbaru dulu; setup limit yang menunggu pullback di bawah entry yang sudah jalan
+      const rank = { signal: 0, filled: 1, limit: 2 };
+      out.sort((a, b) => a.age - b.age || rank[a.status] - rank[b.status] || b.rr3 - a.rr3);
+      const fresh = out.filter((x) => !scan.seen.has(x.key));
+      scan.newKeys = new Set(fresh.map((x) => x.key));
+      for (const x of fresh) scan.seen.add(x.key);
+      store.set('scannerSeen', [...scan.seen].slice(-500));
+      scan.list = out;
+      scan.at = Date.now();
+      scan.meta = { n: syms.length, errs, lastErr };
+      if (fresh.length) {
+        notifyNew(fresh);
+        if (!document.querySelector('[data-pane="signal"]').classList.contains('active')) {
+          scan.unread += fresh.length;
+          $('sig-badge').textContent = scan.unread;
+          $('sig-badge').classList.remove('hidden');
+        }
+        log(`Scanner: ${fresh.length} sinyal baru (${fresh.map((x) => x.symbol).join(', ')})`);
+      }
+      if (errs) log(`Scanner: ${errs} koin gagal di-scan (${lastErr})`, errs === syms.length);
+    } catch (e) {
+      scan.meta = { n: syms.length, errs: 1, lastErr: e.message };
+      scan.at = Date.now();
+    } finally {
+      scan.running = false;
+      $('sig-scan').disabled = false;
+      renderSignals();
+    }
+  }
+
+  function renderSignals() {
+    const m = scan.meta;
+    let st = !scan.at ? 'Belum di-scan.' : `Scan ${hhmm(scan.at)} · ${m.n} koin · ${scan.list.length} sinyal`;
+    if (m && m.errs) st += ` · ${m.errs} gagal (${m.lastErr})`;
+    if (sig.online && scan.nextAt) st += ` · scan berikutnya ${hhmm(scan.nextAt)}`;
+    else if (!sig.online) st += ' · Online mati';
+    $('sig-status').textContent = st;
+    const label = Scanner.ADAPTERS[sig.strat].label;
+    const stateTxt = (s) => s.status === 'limit' ? 'limit di zona EMA · tunggu pullback' : s.status === 'signal' ? 'entry di open candle berikut' : 'sudah terisi';
+    const rr = (v) => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
+    const card = (s) => {
+      const base = Data.splitSymbol(s.symbol).base || s.symbol;
+      const dist = ((s.entry - s.price) / s.price) * 100;
+      return `<div class="sig-card ${s.dir < 0 ? 'short' : ''} ${scan.newKeys.has(s.key) ? 'new' : ''}" data-sym="${esc(s.symbol)}" title="Klik untuk membuka chart ${esc(s.symbol)} ${esc(s.tf)}">
+        <div class="sig-top"><b>${esc(base)}</b><span class="sig-dir">${s.dir > 0 ? 'BUY' : 'SELL'}</span><span class="sig-state">${stateTxt(s)}</span>
+          <span class="sig-age">${s.age === 0 ? 'candle terakhir' : s.age + ' candle lalu'} · ${hhmm(s.signalTime)}</span></div>
+        <div class="sig-grid">
+          <span class="k">Entry</span><span>${fmtPx(s.entry)}</span><span class="r">${s.status === 'limit' ? (dist > 0 ? '+' : '') + dist.toFixed(2) + '% dari harga' : ''}</span>
+          <span class="k">SL</span><span class="sl">${fmtPx(s.sl)}</span><span class="r">-1R</span>
+          <span class="k">TP1</span><span class="tp">${fmtPx(s.tp1)}</span><span class="r">${rr(s.rr1)}</span>
+          <span class="k">TP2</span><span class="tp">${fmtPx(s.tp2)}</span><span class="r">${rr(s.rr2)}</span>
+          <span class="k">TP3</span><span class="tp">${fmtPx(s.tp3)}</span><span class="r">${rr(s.rr3)}</span>
+        </div>
+        <div class="sig-foot">Harga ${fmtPx(s.price)} · ${esc(s.tf)} · ${esc(label)}</div>
+      </div>`;
+    };
+    $('sig-list').innerHTML = scan.list.length ? scan.list.map(card).join('')
+      : `<div class="sig-empty">${scan.at ? 'Belum ada titik entry yang sesuai strategi saat ini.' : 'Klik <b>Scan sekarang</b>, atau nyalakan <b>Online</b> untuk scan otomatis setiap candle close.'}</div>`;
+  }
+
+  function scheduleScan() {
+    clearTimeout(scan.timer);
+    scan.timer = null;
+    scan.nextAt = 0;
+    if (sig.online) {
+      const ms = Data.INTERVAL_MS[sig.tf];
+      scan.nextAt = Math.ceil((Date.now() + 1000) / ms) * ms + 8000; // beberapa detik setelah candle close
+      scan.timer = setTimeout(async () => { await runScan(); scheduleScan(); }, scan.nextAt - Date.now());
+    }
+    renderSignals();
+  }
+  // tab di background: setTimeout bisa tertunda → kejar saat tab aktif lagi
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && sig.online && scan.nextAt && Date.now() > scan.nextAt + 60e3 && !scan.running) runScan().then(scheduleScan);
+  });
+
+  // buka chart dari kartu sinyal: koin + timeframe scanner, strategi ikut ditampilkan
+  function openSignal(sym) {
+    const ad = Scanner.ADAPTERS[sig.strat];
+    let sc = S.scripts.find((x) => x.name === ad.scriptName);
+    if (!sc) {
+      const ex = Examples.EXAMPLES.find((e) => e.key === ad.exampleKey);
+      sc = { id: uid(), name: ex.name, code: ex.code, enabled: true, inputs: {} };
+      S.scripts.push(sc);
+    }
+    sc.enabled = true;
+    S.selectedStrategy = sc.id;
+    store.set('selectedStrategy', sc.id);
+    saveScripts();
+    renderScriptList();
+    if (settings.tf !== sig.tf) {
+      settings.tf = sig.tf;
+      tfBox.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x.textContent === sig.tf));
+    }
+    chooseSymbol(sym);
+  }
+
+  $('sig-list').addEventListener('click', (e) => {
+    const c = e.target.closest('.sig-card[data-sym]');
+    if (c) openSignal(c.dataset.sym);
+  });
+  $('sig-scan').onclick = () => runScan().then(scheduleScan);
+  for (const [id, k] of [['sig-strat', 'strat'], ['sig-tf', 'tf'], ['sig-universe', 'universe']]) {
+    $(id).onchange = () => { sig[k] = $(id).value; saveSig(); scan.list = []; scan.at = 0; scheduleScan(); if (sig.online) runScan().then(scheduleScan); };
+  }
+  $('sig-online').onchange = () => {
+    sig.online = $('sig-online').checked;
+    saveSig();
+    if (sig.online) runScan().then(scheduleScan); else scheduleScan();
+  };
+  $('sig-notify').onchange = async () => {
+    sig.notify = $('sig-notify').checked;
+    saveSig();
+    if (sig.notify) {
+      beep(); // juga membuka izin audio browser
+      if ('Notification' in window && Notification.permission === 'default') {
+        try { await Notification.requestPermission(); } catch (e) { /* abaikan */ }
+      }
+    }
+  };
+  document.querySelector('[data-tabs="side"] [data-tab="signal"]').addEventListener('click', () => {
+    scan.unread = 0;
+    $('sig-badge').classList.add('hidden');
+  });
+  renderSignals();
+  if (sig.online) runScan().then(scheduleScan);
+
   document.addEventListener('keydown', (e) => {
     const tag = (e.target.tagName || '').toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.ctrlKey || e.metaKey || e.altKey) return;
