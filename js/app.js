@@ -1262,6 +1262,13 @@
   // ------------------------------------------------------------------
   const picker = { list: null, live: false, loadedAt: 0, quote: store.get('pickerQuote', 'USDT'), sel: 0, rows: [] };
   const favs = new Set(store.get('favorites', ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']));
+  // tambahan favorit (sekali saja, agar yang sudah dihapus pengguna tidak muncul lagi)
+  if (!store.get('favAdded1', false)) {
+    for (const s of ['SANDISKUSDT', 'NVDAUSDT', 'XAUUSDT']) favs.add(s);
+    store.set('favorites', [...favs]);
+    store.set('favAdded1', true);
+  }
+  const perpTag = (x) => (x.market === 'futures' || Data.marketOf(x.symbol) === 'futures' ? ' <span class="perp" title="Binance Futures (perpetual)">PERP</span>' : '');
 
   function fmtVol(v) {
     if (isNa(v)) return '—';
@@ -1323,7 +1330,7 @@
     $('sym-list').innerHTML = picker.rows.map((x, k) => `
       <div class="sym-row ${k === picker.sel ? 'sel' : ''} ${x.symbol === settings.symbol ? 'cur' : ''}" data-k="${k}">
         <span class="star ${favs.has(x.symbol) ? 'on' : ''}" data-fav="${x.symbol}" title="Favorit">★</span>
-        <span><b>${esc(x.base)}</b><span class="q">${x.quote ? '/' + esc(x.quote) : ''}</span>${x.typed ? ' <span class="q">(ketik)</span>' : ''}</span>
+        <span><b>${esc(x.base)}</b><span class="q">${x.quote ? '/' + esc(x.quote) : ''}</span>${perpTag(x)}${x.typed ? ' <span class="q">(ketik)</span>' : ''}</span>
         <span>${fmtPx(x.price)}</span>
         <span class="${sign(x.change)}">${isNa(x.change) ? '—' : (x.change > 0 ? '+' : '') + x.change.toFixed(2) + '%'}</span>
         <span class="muted">${fmtVol(x.quoteVolume)}</span>
@@ -1397,7 +1404,7 @@
   function watchData() {
     const all = picker.list || [];
     const bySym = new Map(all.map((x) => [x.symbol, x]));
-    const top = all.filter((x) => x.quote === 'USDT' && !STABLES.has(x.base))
+    const top = all.filter((x) => x.quote === 'USDT' && x.market !== 'futures' && !STABLES.has(x.base))
       .sort((a, b) => (b.quoteVolume || 0) - (a.quoteVolume || 0)).slice(0, 100);
     const fav = [...favs].map((sym) => bySym.get(sym) || Object.assign({ symbol: sym, price: NaN, change: NaN, quoteVolume: NaN }, Data.splitSymbol(sym)));
     return { top, fav };
@@ -1460,7 +1467,7 @@
       watch.prev.set(x.symbol, x.price);
       return `<div class="watch-row ${x.symbol === settings.symbol ? 'cur' : ''}" data-sym="${esc(x.symbol)}" title="${esc(x.symbol)} — klik untuk membuka chart">
         <span class="star ${favs.has(x.symbol) ? 'on' : ''}" data-fav="${esc(x.symbol)}" title="Favorit">★</span>
-        <span>${rank ? `<span class="rank">${rank}</span>` : ''}<b>${esc(x.base)}</b><span class="q">${x.quote && x.quote !== 'USDT' ? '/' + esc(x.quote) : ''}</span></span>
+        <span>${rank ? `<span class="rank">${rank}</span>` : ''}<b>${esc(x.base)}</b><span class="q">${x.quote && x.quote !== 'USDT' ? '/' + esc(x.quote) : ''}</span>${perpTag(x)}</span>
         <span class="${flash}">${fmtPx(x.price)}</span>
         <span><span class="chg ${sign(x.change)}">${isNa(x.change) ? '—' : (x.change > 0 ? '+' : '') + x.change.toFixed(2) + '%'}</span></span>
       </div>`;

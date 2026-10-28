@@ -231,3 +231,4 @@ button.sell { background: var(--red); border-color: var(--red); color: #fff; fon
 .sig-grid .tp { color: var(--green); }
 .sig-foot { margin-top: 4px; font-size: 11px; color: var(--muted); }
 .sig-empty { padding: 16px 6px; text-align: center; color: var(--muted); }
+.perp { font-size: 9px; font-weight: 600; color: var(--yellow); border: 1px solid rgba(247, 201, 72, 0.5); border-radius: 3px; padding: 0 3px; margin-left: 4px; vertical-align: 1px; }
