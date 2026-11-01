@@ -1,5 +1,9 @@
 # 🌙 Luna — Dashboard Trading Crypto Pribadi
 
+> **Versi terbaru: 1 November 2026** — unduh **[luna-dashboard.zip](luna-dashboard.zip)** (klik file → tombol *Download raw file*), ekstrak ke folder baru, buka `index.html`, lalu tekan **Ctrl+Shift+R**.
+> Isi terbaru: indikator **Cycle Low (DCL / WCL)** tanpa repaint + prediksi harga, preset ENAUSDT, penanda news (termasuk **hack Binance 29 Okt 2026**), tab **📰 Siklus & News** + tambah news sendiri, scanner sinyal, pair Binance Futures. Script bawaan yang belum Anda edit diperbarui otomatis saat aplikasi dibuka.
+
+
 Dashboard trading pribadi ala TradingView yang berjalan sepenuhnya di browser Anda:
 
 - **Watchlist ★ Koin** di sidebar: favorit + 100 koin USDT teratas (volume 24 jam) dengan harga realtime — klik untuk membuka chart.
