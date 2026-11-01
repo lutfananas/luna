@@ -251,3 +251,4 @@ button.sell { background: var(--red); border-color: var(--red); color: #fff; fon
 .nw-list .ev { display: inline-block; font-size: 11px; padding: 0 2px 0 6px; margin: 2px 2px 2px 0; border-radius: 3px; background: rgba(233, 30, 99, 0.22); }
 .nw-list .ev1 { background: rgba(93, 107, 138, 0.3); }
 .nw-list .x { border: none; background: transparent; color: var(--muted); padding: 0 4px; height: auto; cursor: pointer; }
+.cycles-4y { padding: 6px 8px 8px; font-size: 12px; line-height: 1.7; border-bottom: 1px solid var(--border); }

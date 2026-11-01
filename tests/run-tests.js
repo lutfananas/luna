@@ -415,6 +415,10 @@ console.log('Cycle Low (DCL / WCL) — tanpa repaint');
   for (let k = 4; k < D.length; k++) { if (D[k] < D[k - 1] + 40) continue; const v = pv[D[k - 1] + 40]; err.push(Math.abs(cb[D[k]].low - v) / v * 100); }
   err.sort((a, b) => a - b);
   ok(err.length >= 10 && err[err.length >> 1] < 8, `prediksi harga DCL (terkunci di awal band): selisih median ${err[err.length >> 1].toFixed(1)}% dari ${err.length} siklus`);
+  // status siklus: ✕ DCL ditembus / ⚠ translasi kiri ditulis di candle kejadian (tanpa repaint)
+  const stl = r.drawings.label.filter((l) => !l.deleted && /^(✕|⚠) /.test(l.props.text));
+  const brk = stl.filter((l) => l.props.text.startsWith('✕'));
+  ok(brk.length > 0 && stl.every((l) => l.created === l.props.x) && brk.every((l) => { const ds = D.filter((x) => x < l.props.x); const prevD = ds[ds.length - 1]; return prevD !== undefined && cb[l.props.x].low < cb[prevD].low; }), `penanda status siklus ditulis saat terjadi (${brk.length}× DCL ditembus, ${stl.length - brk.length}× translasi kiri)`);
   const tip = (sym) => (Pine.run(comp, cb, { timeframe: '1D', symbol: sym }).drawings.label.find((l) => !l.deleted && /Prediksi DCL/.test(l.props.tooltip)) || { props: { tooltip: '' } }).props.tooltip;
   ok(/preset ENAUSDT/.test(tip('ENAUSDT')) && !/preset ENAUSDT/.test(tip('BTCUSDT')), 'preset Auto: ENAUSDT memakai setelan hasil tuning ENA, koin lain tidak');
   // penanda news: di candle tanggal kejadian, FOMC/unlock hanya jika dinyalakan, jadwal mendatang di area masa depan

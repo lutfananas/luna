@@ -114,6 +114,7 @@ wDrop0 = input.float(12, "Penurunan awal awal-band→WCL (%)", minval = 0, group
 gS = "Tampilan"
 showProj = input.bool(true, "Prediksi DCL & WCL berikutnya", group = gS)
 showMA   = input.bool(true, "MA 10 hari (konfirmasi & exit trailing)", group = gS)
+showStat = input.bool(true, "Tanda status siklus (✕ DCL ditembus, ⚠ translasi kiri)", group = gS)
 gE = "Rencana entry (long)"
 showPlan = input.bool(true, "Gambar rencana entry saat DCL terkonfirmasi", group = gE, tooltip = "ENTRY = close hari konfirmasi DCL · SL = sedikit di bawah low DCL · TP1 = +1.5R (tutup 50%, SL pindah ke entry) · sisa posisi keluar saat close di bawah MA 10 hari.")
 tp1R     = input.float(1.5, "TP1 (× R)", minval = 0.5, step = 0.25, group = gE)
@@ -161,6 +162,13 @@ var int   dLockBar = na
 var float dLockClose = na
 var int   lastW = na
 var float lastWLow = na
+// status siklus berjalan (setelah DCL terkonfirmasi): puncak siklus, translasi kiri, DCL ditembus
+var float cycHi = na
+var int   cycHiBar = na
+var bool  warnLeft = false
+var bool  warnBreak = false
+var float hiSinceCand = na
+var int   hiSinceCandBar = na
 var int   wCandBar = na
 var float wCandLow = na
 var wLens = array.new_float()
@@ -181,6 +189,11 @@ inWindow = na(lastD) or bar_index - lastD >= dGap or (bar_index - lastD >= toBar
 if inWindow and low <= dipLow and (na(candBar) or low < candLow)
     candBar := bar_index
     candLow := low
+    hiSinceCand := high
+    hiSinceCandBar := bar_index
+else if not na(candBar) and high > nz(hiSinceCand)
+    hiSinceCand := high
+    hiSinceCandBar := bar_index
 
 // konfirmasi DCL → label permanen
 if not na(candBar) and bar_index > candBar and close > prevDayHigh and close > ma
@@ -228,6 +241,10 @@ if not na(candBar) and bar_index > candBar and close > prevDayHigh and close > m
         wCandLow := candLow
     lastD := candBar
     lastDLow := candLow
+    cycHi := hiSinceCand
+    cycHiBar := hiSinceCandBar
+    warnLeft := false
+    warnBreak := false
     candBar := na
     candLow := na
     dLockBar := na
@@ -235,6 +252,28 @@ if not na(candBar) and bar_index > candBar and close > prevDayHigh and close > m
     if bar_index - lastD >= dGap
         dLockBar := bar_index
         dLockClose := close
+
+// ── status siklus berjalan (tanpa repaint: label ditulis di candle saat kondisi terjadi) ──
+// Studi 1.028 daily cycle (21 koin): DCL ditembus di 64% siklus. Di hari ke-20, jika "translasi kiri"
+// (puncak sudah lewat ≥5 hari & close < titik tengah DCL↔puncak) → 71% DCL kemudian ditembus; jika tidak → 34%.
+cycStatus = 0
+if not na(lastD)
+    if high > nz(cycHi)
+        cycHi := high
+        cycHiBar := bar_index
+    dayN = (bar_index - lastD) / bpd
+    leftNow = dayN >= 15 and (bar_index - cycHiBar) / bpd >= 5 and close < (cycHi + lastDLow) / 2
+    if not warnBreak and low < lastDLow
+        warnBreak := true
+        if showStat
+            label.new(bar_index, low, "✕ DCL ditembus", style = label.style_label_up, yloc = yloc.belowbar, color = color.new(colFail, 10), textcolor = color.white, size = size.tiny, tooltip = "Harga menembus low DCL terakhir (" + fmtP(lastDLow) + "): rencana entry batal (SL). Siklus menjadi failed: historis low berikutnya median 14% di bawah DCL. Tunggu DCL baru terkonfirmasi.")
+    if not warnLeft and not warnBreak and leftNow
+        warnLeft := true
+        if showStat
+            label.new(bar_index, high, "⚠ Translasi kiri", style = label.style_label_down, yloc = yloc.abovebar, color = color.new(#ff6d00, 10), textcolor = color.white, size = size.tiny, tooltip = "Puncak siklus sudah lewat & harga di bawah titik tengah: historis 62-74% DCL kemudian ditembus. Amankan profit / jangan tambah posisi long.")
+    cycStatus := warnBreak ? 3 : leftNow or warnLeft ? 2 : dayN >= 15 ? 1 : 0
+plot(cycStatus, "Status siklus", display = display.none)
+plot(nz(lastDLow), "DCL terakhir", display = display.none)
 
 // ── prediksi harga: close acuan × (1 − median penurunan historis close-acuan → low) ──
 // acuan = close candle pertama timing band (terkunci); sebelum band = close terakhir (sementara)
