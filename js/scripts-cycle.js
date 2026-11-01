@@ -78,7 +78,7 @@ if barstate.islast
 `;
 
   const indicator = String.raw`//@version=5
-indicator("Cycle Low (DCL / WCL)", overlay = true, max_labels_count = 500, max_boxes_count = 50, max_lines_count = 50)
+indicator("Cycle Low (DCL / WCL)", overlay = true, max_labels_count = 500, max_boxes_count = 50, max_lines_count = 150)
 // News: penanda peristiwa besar / FOMC / unlock ENA di atas candle (grup \"News\").
 
 // Teori siklus (J.M. Hurst, dipopulerkan di kripto oleh Bob Loukas) — TANPA REPAINT.
@@ -113,7 +113,12 @@ wAvg0  = input.int(23, "Durasi awal (minggu)", minval = 2, group = gW)
 wDrop0 = input.float(12, "Penurunan awal awal-band→WCL (%)", minval = 0, group = gW)
 gS = "Tampilan"
 showProj = input.bool(true, "Prediksi DCL & WCL berikutnya", group = gS)
-showMA   = input.bool(false, "Tampilkan MA konfirmasi", group = gS)
+showMA   = input.bool(true, "MA 10 hari (konfirmasi & exit trailing)", group = gS)
+gE = "Rencana entry (long)"
+showPlan = input.bool(true, "Gambar rencana entry saat DCL terkonfirmasi", group = gE, tooltip = "ENTRY = close hari konfirmasi DCL · SL = sedikit di bawah low DCL · TP1 = +1.5R (tutup 50%, SL pindah ke entry) · sisa posisi keluar saat close di bawah MA 10 hari.")
+tp1R     = input.float(1.5, "TP1 (× R)", minval = 0.5, step = 0.25, group = gE)
+planDays = input.int(10, "Panjang garis rencana (hari)", minval = 2, group = gE)
+colE     = input.color(color.new(#2962ff, 0), "Warna entry", group = gE)
 colD     = input.color(color.new(#26a69a, 0), "Warna DCL", group = gS)
 colW     = input.color(color.new(#ff9800, 0), "Warna WCL", group = gS)
 colFail  = input.color(color.new(#ef5350, 0), "Warna failed cycle", group = gS)
@@ -132,7 +137,8 @@ ma = ta.sma(close, math.max(2, toBars(maDays)))
 dayHigh = ta.highest(high, toBars(1))
 prevDayHigh = dayHigh[1]
 dipLow = ta.lowest(low, toBars(dipDays))
-plot(showMA ? ma : na, "MA konfirmasi", color = color.new(color.gray, 30))
+plot(showMA ? ma : na, "MA 10 hari", color = color.new(#90a4ae, 20))
+atrD = ta.atr(14)
 
 fmtP(p) =>
     p >= 1000 ? str.tostring(math.round(p)) : p >= 1 ? str.tostring(p, "#.##") : str.tostring(p, "#.######")
@@ -184,6 +190,21 @@ if not na(candBar) and bar_index > candBar and close > prevDayHigh and close > m
     if not na(dLockBar) and candBar >= dLockBar
         array.push(dDrops, 1 - candLow / dLockClose)
     label.new(candBar, candLow, "DCL", style = label.style_label_up, color = failed ? colFail : colD, textcolor = color.white, size = size.small, tooltip = (failed ? "DCL — failed cycle" : "Daily Cycle Low") + " · " + fmtP(candLow))
+    // rencana entry long saat DCL terkonfirmasi (digambar sekali, tidak berubah)
+    if showPlan
+        eP = close
+        slP = candLow - 0.1 * nz(atrD)
+        rP = eP - slP
+        if rP > 0
+            t1P = eP + tp1R * rP
+            xE = bar_index + toBars(planDays)
+            line.new(bar_index, eP, xE, eP, color = colE, width = 2)
+            line.new(bar_index, slP, xE, slP, color = colFail)
+            line.new(bar_index, t1P, xE, t1P, color = colD, style = line.style_dashed)
+            label.new(xE, eP, "ENTRY " + fmtP(eP), style = label.style_label_left, color = color.new(colE, 15), textcolor = color.white, size = size.tiny, tooltip = "Entry long: close hari konfirmasi DCL")
+            farSL = rP / eP > 0.1
+            label.new(xE, slP, "SL " + fmtP(slP) + " (-1R" + (farSL ? ", jauh " + str.tostring(math.round(100 * rP / eP)) + "%" : "") + ")", style = label.style_label_left, color = color.new(colFail, 15), textcolor = color.white, size = size.tiny, tooltip = "Stop loss: sedikit di bawah low DCL (0.1 ATR)" + (farSL ? ". SL jauh dari entry: kecilkan ukuran posisi agar risiko tetap 1-2% modal." : ""))
+            label.new(xE, t1P, "TP1 " + fmtP(t1P) + " (+" + str.tostring(tp1R) + "R)", style = label.style_label_left, color = color.new(colD, 15), textcolor = color.white, size = size.tiny, tooltip = "TP1: tutup 50% lalu SL pindah ke entry; sisa posisi keluar saat close di bawah MA 10 hari")
     // WCL: kandidat sebelumnya terkonfirmasi jika DCL baru lebih tinggi
     if not na(wCandBar) and candLow > wCandLow
         if not na(lastW)

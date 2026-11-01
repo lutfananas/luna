@@ -436,12 +436,87 @@
     return c;
   }
 
+  // ------------------------------------------------------------------
+  // Cycle Low selalu dihitung dari data HARIAN (riwayat panjang) di timeframe apa pun,
+  // lalu label/kotak/garis & plot dipetakan ke candle chart → prediksi sama persis di 15m, 1H, 4H, 1D.
+  // ------------------------------------------------------------------
+  const isCycleCode = (code) => /indicator\("Cycle Low/.test(code);
+  const dailyCache = { key: '', bars: null, at: 0, loading: null, loadingKey: '', failedAt: 0 };
+  function dailyBarsFor(sym) {
+    if (dailyCache.key === sym && dailyCache.bars && Date.now() - dailyCache.at < 30 * 60e3) return dailyCache.bars;
+    if ((!dailyCache.loading || dailyCache.loadingKey !== sym) && Date.now() - dailyCache.failedAt > 60e3) {
+      dailyCache.loadingKey = sym;
+      log(`Cycle Low: memuat data harian ${sym} (dipakai di semua timeframe)…`);
+      dailyCache.loading = Data.fetchBinance(sym, '1d', 2000).then((b) => {
+        Object.assign(dailyCache, { key: sym, bars: b, at: Date.now(), loading: null });
+        if (settings.symbol === sym && settings.tf !== '1d') runAll();
+      }).catch((e) => {
+        Object.assign(dailyCache, { loading: null, failedAt: Date.now() });
+        log(`Cycle Low: gagal memuat data harian (${e.message}) — sementara dihitung dari data chart`, true);
+      });
+    }
+    return dailyCache.key === sym ? dailyCache.bars : null; // data lama (kedaluwarsa) tetap dipakai sambil memuat ulang
+  }
+  function mapDailyResult(res, daily, bars) {
+    const DAY = 864e5, n = bars.length, last = bars[n - 1];
+    const step = n > 1 ? bars[n - 1].time - bars[n - 2].time : 3600e3;
+    const dayT = (d) => (d < daily.length ? daily[Math.max(0, d)].time : daily[daily.length - 1].time + (d - (daily.length - 1)) * DAY);
+    const idxAt = (t) => { // candle chart yang memuat waktu t
+      if (t > last.time + step) return n - 1 + Math.round((t - last.time) / step);
+      if (t < bars[0].time) return -1;
+      let lo = 0, hi = n - 1;
+      while (lo < hi) { const m = (lo + hi + 1) >> 1; if (bars[m].time <= t) lo = m; else hi = m - 1; }
+      return lo;
+    };
+    const startIdx = (d) => { const t = dayT(d); const i = idxAt(t); return i >= 0 ? i : (t + DAY > bars[0].time ? 0 : -1); };
+    const endIdx2 = (d) => Math.min(n - 1, Math.max(0, idxAt(dayT(d) + DAY - 1)));
+    const lowIdx = (d) => { // candle dengan low terendah di hari itu (letak label DCL/WCL yang presisi)
+      const t0 = dayT(d), t1 = t0 + DAY;
+      let a = idxAt(t0); if (a < 0) a = 0;
+      if (a >= n) return a;
+      let best = -1;
+      for (let i = a; i < n && bars[i].time < t1; i++) if (bars[i].time >= t0 - step && (best < 0 || bars[i].low < bars[best].low)) best = i;
+      return best >= 0 ? best : startIdx(d);
+    };
+    const XK = ['x', 'left', 'right', 'x1', 'x2'];
+    const mapProps = (p, atLow) => {
+      if (!p) return p;
+      const q = Object.assign({}, p);
+      if (q.xloc && q.xloc !== 'bar_index') return q;
+      for (const k of XK) if (typeof q[k] === 'number') q[k] = atLow && k === 'x' ? lowIdx(q[k]) : startIdx(q[k]);
+      return q;
+    };
+    const out = { box: [], line: [], label: [], table: (res.drawings && res.drawings.table) || [] };
+    for (const kind of ['box', 'line', 'label']) {
+      for (const o of (res.drawings && res.drawings[kind]) || []) {
+        const atLow = kind === 'label' && /^(DCL|WCL)$/.test(o.props.text);
+        // waktu asli (dari data harian) untuk tabel — tetap benar walau titiknya di luar data chart
+        const tx = typeof o.props.x === 'number' ? (atLow && lowIdx(o.props.x) >= 0 && lowIdx(o.props.x) < n && bars[lowIdx(o.props.x)].time >= dayT(o.props.x) ? bars[lowIdx(o.props.x)].time : dayT(o.props.x)) : undefined;
+        out[kind].push(Object.assign({}, o, {
+          tx, tl: typeof o.props.left === 'number' ? dayT(o.props.left) : undefined, tr: typeof o.props.right === 'number' ? dayT(o.props.right) : undefined,
+          created: endIdx2(o.created), deleted: o.deleted === null ? null : endIdx2(o.deleted),
+          init: mapProps(o.init, atLow), props: mapProps(o.props, atLow),
+          hist: o.hist.map((h) => ({ i: endIdx2(h.i), k: h.k, v: XK.includes(h.k) && typeof h.v === 'number' ? startIdx(h.v) : h.v })),
+        }));
+      }
+    }
+    // plot: nilai hari yang memuat candle chart
+    const dIdx = (t) => { let lo = 0, hi = daily.length - 1; if (t < daily[0].time) return -1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (daily[m].time <= t) lo = m; else hi = m - 1; } return lo; };
+    const map = bars.map((b) => dIdx(b.time));
+    const plots = res.plots.map((p) => Object.assign({}, p, { values: map.map((d) => (d >= 0 ? p.values[d] : NaN)), colors: p.colors ? map.map((d) => (d >= 0 ? p.colors[d] : undefined)) : p.colors }));
+    return Object.assign({}, res, { drawings: out, plots, shapes: [], bgcolors: [], barcolors: null, dailyBased: true });
+  }
+
   function runScript(sc) {
     if (!S.bars.length) return null;
     const t0 = performance.now();
     let res;
     try {
-      res = Pine.run(getCompiled(sc.code), S.bars, { inputs: sc.inputs, symbol: settings.symbol, timeframe: S.source === 'csv' ? null : settings.tf });
+      const daily = isCycleCode(sc.code) && S.source === 'binance' && settings.tf !== '1d' ? dailyBarsFor(settings.symbol) : null;
+      if (daily && daily.length > 60) {
+        res = Pine.run(getCompiled(sc.code), daily, { inputs: sc.inputs, symbol: settings.symbol, timeframe: '1d' });
+        if (!res.error) res = mapDailyResult(res, daily, S.bars);
+      } else res = Pine.run(getCompiled(sc.code), S.bars, { inputs: sc.inputs, symbol: settings.symbol, timeframe: S.source === 'csv' ? null : settings.tf });
     } catch (e) {
       res = { decl: Object.assign(Pine.peekDecl(sc.code), { overlay: true }), plots: [], shapes: [], hlines: [], bgcolors: [], barcolors: null, inputs: [], strategy: null, error: e.message };
     }
@@ -451,7 +526,7 @@
     const ms = (performance.now() - t0).toFixed(0);
     for (const w of res.warnings || []) log(`${sc.name}: ⚠ ${w}`);
     if (res.error) log(`${sc.name}: ${res.error}`, true);
-    else log(`${sc.name}: OK (${ms} ms${res.strategy ? `, ${res.strategy.trades.length} trade` : ''})`);
+    else log(`${sc.name}: OK (${ms} ms${res.strategy ? `, ${res.strategy.trades.length} trade` : ''}${res.dailyBased ? ', dihitung dari data harian' : ''})`);
     return res;
   }
 
@@ -495,9 +570,11 @@
     const live = end >= bars.length - 1;
     const step = bars.length > 1 ? bars[1].time - bars[0].time : 864e5;
     const tOf = (x) => (x <= bars.length - 1 ? bars[Math.max(0, Math.round(x))].time : bars[bars.length - 1].time + (x - (bars.length - 1)) * step);
+    const tX = (l) => (l.tx !== undefined ? l.tx : tOf(l.props.x)); // waktu asli (hasil harian) bila ada
     const labs = res.drawings.label.filter((l) => !l.deleted && l.created <= end);
-    const dcl = labs.filter((l) => l.props.text === 'DCL').sort((a, b) => a.props.x - b.props.x);
-    const wclX = new Set(labs.filter((l) => l.props.text === 'WCL').map((l) => l.props.x));
+    const tsort = (l) => (l.tx !== undefined ? l.tx : l.props.x);
+    const dcl = labs.filter((l) => l.props.text === 'DCL').sort((a, b) => tsort(a) - tsort(b));
+    const wclX = new Set(labs.filter((l) => l.props.text === 'WCL').map((l) => (l.tx !== undefined ? l.tx : l.props.x)));
     const events = allEvents();
     const evIn = (t0, t1, kinds) => events.filter((e) => e.t >= t0 && e.t < t1 && kinds.includes(e.k));
     const evTxt = (list) => list.map((e) => `<span class="ev ev${e.k}" title="${esc(fmtDay(e.t) + ' · ' + e.l)}">${esc(e.s)} <span class="muted">${fmtDay(e.t).slice(0, 6)}</span></span>`).join(' ') || '<span class="muted">—</span>';
@@ -506,38 +583,45 @@
     // siklus berjalan
     if (dcl.length) {
       const last = dcl[dcl.length - 1];
-      const t0 = tOf(last.props.x);
-      const days = Math.round((nowT - t0) / 864e5);
+      const t0 = tX(last);
+      const days = Math.floor(nowT / 864e5) - Math.floor(t0 / 864e5);
       const band = live && res.drawings.box.find((b) => !b.deleted && /^zona DCL/.test(b.props.text || ''));
       const pred = live && labs.find((l) => /^DCL /.test(l.props.text) && /Prediksi/.test(l.props.tooltip || ''));
-      const bandTxt = band ? `band ${fmtDay(tOf(band.props.left)).slice(0, 6)} – ${fmtDay(tOf(band.props.right)).slice(0, 6)}` : '';
-      const horizon = band ? Math.max(tOf(band.props.right), nowT + 30 * 864e5) : nowT + 45 * 864e5;
+      const bL = band && (band.tl !== undefined ? band.tl : tOf(band.props.left)), bR = band && (band.tr !== undefined ? band.tr : tOf(band.props.right));
+      const bandTxt = band ? `band ${fmtDay(bL).slice(0, 6)} – ${fmtDay(bR).slice(0, 6)}` : '';
+      const horizon = band ? Math.max(bR, nowT + 30 * 864e5) : nowT + 45 * 864e5;
       const upcoming = live ? evIn(nowT + 1, horizon + 7 * 864e5, [0, 1, 2]) : [];
       const recentShock = events.filter((e) => e.k === 0 && e.t <= nowT && e.t > nowT - 7 * 864e5);
       const watch = [];
       for (const e of recentShock) watch.push(`<span class="ev ev0 warn" title="${esc(e.l)}">⚠ ${esc(e.s)} ${fmtDay(e.t).slice(0, 6)}: guncangan baru — low siklus bisa datang lebih cepat / lebih dalam</span>`);
       for (const e of upcoming) watch.push(`<span class="ev ev${e.k}" title="${esc(e.l)}">${esc(e.s)} ${fmtDay(e.t).slice(0, 6)} <span class="muted">(${Math.round((e.t - nowT) / 864e5)} hari lagi)</span></span>`);
       const sinceNews = evIn(t0 + 1, nowT + 1, [0]);
+      const planOf = (re) => labs.filter((l) => re.test(l.props.text) && l.created === last.created)[0];
+      const pE = planOf(/^ENTRY /), pS = planOf(/^SL /), pT = planOf(/^TP1 /);
+      const planTxt = pE ? `<br><b>Rencana entry (DCL ${fmtDay(t0).slice(0, 6)}):</b> <span class="ev ev1">${esc(pE.props.text)}</span> <span class="ev ev0" style="background:rgba(242,54,69,.28)">${esc(pS ? pS.props.text : '')}</span> <span class="ev ev2">${esc(pT ? pT.props.text : '')}</span> <span class="muted">tutup 50% di TP1 → SL ke entry → sisa keluar saat close &lt; MA 10 hari</span>` : '';
       html += `<tr class="cur" data-x="${last.props.x}"><td><b>▶ Berjalan</b></td><td>sejak DCL ${fmtDay(t0)}</td>
         <td>${pred ? `<b>prediksi ${esc(pred.props.text.replace(/^DCL /, ''))}</b>` : '<span class="muted">—</span>'}</td>
         <td>hari ke-${days}</td><td class="muted">${esc(bandTxt)}</td>
-        <td class="wrap">${sinceNews.length ? 'Sudah terjadi: ' + evTxt(sinceNews) + '<br>' : ''}<b>Berjaga-jaga:</b> ${watch.join(' ') || '<span class="muted">tidak ada jadwal kejadian dalam band ini</span>'}</td></tr>`;
+        <td class="wrap">${sinceNews.length ? 'Sudah terjadi: ' + evTxt(sinceNews) + '<br>' : ''}<b>Berjaga-jaga:</b> ${watch.join(' ') || '<span class="muted">tidak ada jadwal kejadian dalam band ini</span>'}${planTxt}</td></tr>`;
     }
     for (let k = dcl.length - 1; k >= 0; k--) {
-      const l = dcl[k], t0 = tOf(l.props.x), t1 = k + 1 < dcl.length ? tOf(dcl[k + 1].props.x) : null;
+      const l = dcl[k], t0 = tX(l), t1 = k + 1 < dcl.length ? tX(dcl[k + 1]) : null;
       const failed = /failed/.test(l.props.tooltip || '');
-      const isW = wclX.has(l.props.x);
+      const isW = wclX.has(l.tx !== undefined ? l.tx : l.props.x);
       // kejadian ≤3 hari sebelum sebuah low dihitung ke siklus yang low-nya dipicu kejadian itu
       const news = evIn(t0 - 3 * 864e5, t1 ? t1 - 3 * 864e5 : nowT + 1, [0]);
       html += `<tr data-x="${l.props.x}"><td>#${k + 1}</td><td>${fmtDay(t0)}</td><td>${fmtPx(l.props.y)}</td>
-        <td>${t1 ? Math.round((t1 - t0) / 864e5) + ' hari' : '<span class="muted">berjalan</span>'}</td>
+        <td>${t1 ? Math.round(Math.floor(t1 / 864e5) - Math.floor(t0 / 864e5)) + ' hari' : '<span class="muted">berjalan</span>'}</td>
         <td>${isW ? '<span class="tag w">WCL</span> ' : ''}${failed ? '<span class="tag f">failed</span>' : '<span class="tag d">DCL</span>'}</td>
         <td class="wrap">${evTxt(news)}</td></tr>`;
     }
     $('cycles-table').innerHTML = html + '</tbody>';
     $('cycles-note').innerHTML = `Klik baris untuk melihat siklus di chart. News "selama siklus" = peristiwa besar dari 3 hari sebelum low sampai low berikutnya.
       Studi Apr 2024 – Nov 2026: ±17–20% cycle low (ENA/BTC) terjadi dekat guncangan (perang, hack, krisis) vs ±7% kebetulan; setelah guncangan, low ENA langsung terbentuk ≤7 hari hanya di 5 dari 14 kasus.
-      FOMC & unlock ENA tidak terbukti memengaruhi waktu low. Guncangan tak terjadwal tidak bisa diprediksi — daftar news perlu diperbarui manual.`;
+      FOMC & unlock ENA tidak terbukti memengaruhi waktu low. Guncangan tak terjadwal tidak bisa diprediksi — daftar news perlu diperbarui manual.<br>
+      Rencana entry (setelah DCL terkonfirmasi, SL di bawah low DCL, 50% di +1.5R lalu SL ke entry, sisa keluar saat close &lt; MA 10 hari), uji 16 koin 1H Apr 2024 – Okt 2026:
+      tuning ±0.00R/trade, verifikasi +0.20R/trade (PF 1.38), 9/16 koin untung; ENA saja: tuning −0.27R, verifikasi +0.33R (5 trade). Bukan jaminan — pakai ukuran posisi kecil.
+      Cycle Low dihitung dari data harian di semua timeframe; timeframe kecil hanya untuk melihat detail entry.`;
   }
   function renderNewsList() {
     $('nw-list').innerHTML = customNews.length
@@ -571,7 +655,9 @@
     const tr = e.target.closest('tr[data-x]');
     if (!tr) return;
     const x = +tr.dataset.x;
-    chart.timeScale().setVisibleLogicalRange({ from: x - 60, to: x + 60 });
+    if (x < 0) { status('Siklus ini di luar data chart — tambah jumlah bar atau pakai timeframe 1d', true); return; }
+    const w = settings.tf === '1d' ? 60 : settings.tf === '4h' ? 240 : 720;
+    chart.timeScale().setVisibleLogicalRange({ from: x - w, to: x + w });
   });
   document.querySelector('[data-tabs="bottom"] [data-tab="cycles"]').addEventListener('click', () => renderCycles(true));
 
