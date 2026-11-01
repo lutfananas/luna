@@ -497,6 +497,15 @@ console.log('Data: fallback ke Binance Futures');
     globalThis.fetch = realFetch;
   }
 })().then(() => {
+console.log('Update otomatis script bawaan');
+{
+  const SX = require('../js/scripts.js');
+  const cur = SX.EXAMPLES.find((e) => e.key === 'cycle-low');
+  ok(SX.HISTORY['cycle-low'] && SX.HISTORY['cycle-low'].length >= 1 && !SX.HISTORY['cycle-low'].includes(SX.hashCode(cur.code)), `riwayat versi lama tersedia (${Object.entries(SX.HISTORY).map(([k, v]) => k + ':' + v.length).join(', ')})`);
+  ok(SX.EXAMPLES.every((e) => !(SX.HISTORY[e.key] || []).includes(SX.hashCode(e.code))), 'versi terbaru tidak tercatat sebagai versi lama');
+  ok(SX.hashCode('abc\n') === SX.hashCode('  abc') && SX.hashCode('abc') !== SX.hashCode('abd'), 'hash kode stabil terhadap spasi tepi');
+}
+
 console.log('Pesan error');
 {
   const cases = [
