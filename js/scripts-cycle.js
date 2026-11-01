@@ -6,8 +6,78 @@
 (function (root) {
   'use strict';
 
+  // Daftar kejadian (tanggal UTC). k: 0 = peristiwa besar (guncangan, halving, pemilu), 1 = FOMC, 2 = unlock ENA.
+  // Diverifikasi dari pemberitaan; tanggal unlock ENA & FOMC Des 2026 = perkiraan.
+  const EVENTS = [
+    ['2020-03-12', 0, '📉 COVID', 'Crash pandemi COVID-19 (Black Thursday)'],
+    ['2020-05-11', 0, '₿ Halving', 'Bitcoin halving ke-3'],
+    ['2022-02-24', 0, '⚔ Rusia–Ukraina', 'Rusia menginvasi Ukraina'],
+    ['2022-05-09', 0, '💥 LUNA', 'Runtuhnya Terra/LUNA & stablecoin UST'],
+    ['2022-11-08', 0, '💥 FTX', 'Runtuhnya bursa FTX'],
+    ['2023-03-10', 0, '🏦 SVB', 'Bank SVB runtuh, USDC sempat depeg'],
+    ['2024-04-13', 0, '⚔ Iran→Israel', 'Iran menyerang Israel dengan drone & rudal'],
+    ['2024-04-19', 0, '⚔ Israel→Iran', 'Israel membalas serangan ke Iran'],
+    ['2024-04-20', 0, '₿ Halving', 'Bitcoin halving ke-4'],
+    ['2024-08-05', 0, '📉 Yen carry', 'Unwind yen carry trade, crash pasar global'],
+    ['2024-10-01', 0, '⚔ Rudal Iran', 'Iran menembakkan rudal ke Israel'],
+    ['2024-11-05', 0, '🗳 Pemilu AS', 'Pemilihan presiden AS'],
+    ['2025-01-27', 0, '📉 DeepSeek', 'DeepSeek memicu aksi jual saham AI'],
+    ['2025-02-21', 0, '🔓 Hack Bybit', 'Bursa Bybit diretas ±$1,5 miliar'],
+    ['2025-04-02', 0, '🏛 Tarif AS', 'Tarif "Liberation Day" AS → crash sampai 7 April'],
+    ['2025-06-13', 0, '⚔ Israel→Iran', 'Israel menyerang Iran'],
+    ['2025-06-22', 0, '⚔ AS→Iran', 'AS menyerang situs nuklir Iran'],
+    ['2025-10-10', 0, '🏛 Tarif China', 'Ancaman tarif 100% ke China → likuidasi $19 miliar; USDe sempat depeg di Binance'],
+    ['2026-02-05', 0, '📉 Likuidasi', 'Likuidasi paksa (dana Hong Kong), BTC sempat ke $60 ribu'],
+    ['2026-06-09', 0, '⚔ AS→Iran', 'Serangan AS ke Iran (9–11 Juni)'],
+    ['2026-09-24', 0, '🔓 Hack Bitget', 'Bursa Bitget diretas ±$352 juta'],
+    ['2026-10-09', 0, '📉 Deleveraging', 'Gelombang likuidasi long, BTC turun ke ±$77 ribu'],
+  ];
+  for (const d of ['2024-05-01', '2024-06-12', '2024-07-31', '2024-09-18', '2024-11-07', '2024-12-18', '2025-01-29', '2025-03-19', '2025-05-07', '2025-06-18', '2025-07-30', '2025-09-17', '2025-10-29', '2025-12-10', '2026-01-28', '2026-03-18', '2026-04-29', '2026-06-17', '2026-07-29', '2026-09-16', '2026-10-28', '2026-12-09']) EVENTS.push([d, 1, '🏦 FOMC', 'Keputusan suku bunga The Fed (FOMC)' + (d === '2026-12-09' ? ' — tanggal perkiraan' : '')]);
+  for (let m = 0; m < 18; m++) EVENTS.push([new Date(Date.UTC(2025, 3 + m, 2)).toISOString().slice(0, 10), 2, '🔑 Unlock', 'Unlock token ENA bulanan (tanggal perkiraan)']);
+  EVENTS.push(['2026-10-05', 2, '🔑 Unlock', 'Pelepasan terakhir porsi investor ENA (dilaporkan; setelah buyback 27 Agu 2026)']);
+  EVENTS.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
+  const q = (t) => '"' + String(t).replace(/"/g, "'") + '"';
+  const NEWS = String.raw`
+// ── News: penanda kejadian di atas candle (tanggal UTC) ──
+gN = "News"
+showBig  = input.bool(true, "Peristiwa besar (perang, hack, krisis, halving, pemilu)", group = gN)
+showFomc = input.bool(false, "FOMC (rapat suku bunga The Fed)", group = gN)
+showUnl  = input.bool(false, "Unlock token ENA", group = gN)
+var evT  = array.from(` + EVENTS.map((e) => Date.parse(e[0] + 'T00:00:00Z')).join(', ') + String.raw`)
+var evK  = array.from(` + EVENTS.map((e) => e[1]).join(', ') + String.raw`)
+var evS  = array.from(` + EVENTS.map((e) => q(e[2])).join(', ') + String.raw`)
+var evL  = array.from(` + EVENTS.map((e) => q(e[0] + ' · ' + e[3])).join(', ') + String.raw`)
+evOn(k) =>
+    k == 0 ? showBig : k == 1 ? showFomc : showUnl
+evCol(k) =>
+    k == 0 ? color.new(#9c27b0, 15) : k == 1 ? color.new(#5d6b8a, 15) : color.new(#00838f, 15)
+tfMs = timeframe.in_seconds() * 1000
+var int evI = 0
+// lewati kejadian sebelum data dimulai
+if bar_index == 0
+    while evI < array.size(evT) and array.get(evT, evI) < time
+        evI += 1
+while evI < array.size(evT) and array.get(evT, evI) < time + tfMs
+    k = array.get(evK, evI)
+    if evOn(k)
+        label.new(bar_index, high, array.get(evS, evI), yloc = yloc.abovebar, style = label.style_label_down, color = evCol(k), textcolor = color.white, size = size.tiny, tooltip = array.get(evL, evI))
+    evI += 1
+// kejadian terjadwal yang akan datang (di area masa depan chart)
+var futureNews = array.new_label()
+if barstate.islast
+    for l in futureNews
+        label.delete(l)
+    array.clear(futureNews)
+    if evI < array.size(evT)
+        for j = evI to array.size(evT) - 1
+            k = array.get(evK, j)
+            if evOn(k)
+                array.push(futureNews, label.new(bar_index + math.max(1, math.round((array.get(evT, j) - time) / tfMs)), high * 1.03, array.get(evS, j), style = label.style_label_down, color = color.new(evCol(k), 60), textcolor = color.white, size = size.tiny, tooltip = array.get(evL, j) + " (akan datang)"))
+`;
+
   const indicator = String.raw`//@version=5
 indicator("Cycle Low (DCL / WCL)", overlay = true, max_labels_count = 500, max_boxes_count = 50, max_lines_count = 50)
+// News: penanda peristiwa besar / FOMC / unlock ENA di atas candle (grup \"News\").
 
 // Teori siklus (J.M. Hurst, dipopulerkan di kripto oleh Bob Loukas) — TANPA REPAINT.
 // Candle diproses dari kiri ke kanan seperti saat live; label yang sudah ditulis tidak pernah berubah.
@@ -182,7 +252,7 @@ if barstate.islast and showProj and not na(lastD)
         zHiW = refW * (1 - lDropW)
         bW := box.new(lastW + wGap, zHiW, math.max(lastW + wEnd, xW + 1), zLoW, border_color = color.new(colW, 50), border_style = line.style_dashed, bgcolor = color.new(colW, 95), text = "zona WCL " + fmtP(zLoW) + " – " + fmtP(zHiW), text_size = size.tiny, text_color = color.new(colW, 10), text_valign = text.align_bottom)
         pW := label.new(xW, predW * (xW == xD and math.abs(predW - predD) < predD * 0.03 ? 0.97 : 1), "WCL " + fmtP(predW) + (lockedW ? "" : " (sementara)"), style = label.style_label_up, color = color.new(colW, lockedW ? 55 : 75), textcolor = color.white, size = size.normal, tooltip = "Prediksi WCL berikutnya: " + fmtP(predW) + " (zona 50%: " + fmtP(zLoW) + " – " + fmtP(zHiW) + "), sekitar minggu ke-" + str.tostring(math.round(lenW / bpd / 7)) + " siklus. " + (lockedW ? "Terkunci sejak awal timing band." : "Sementara: mengikuti close terakhir sampai timing band dimulai."))
-`;
+` + NEWS;
 
   const api = { indicator };
   root.LunaCycle = api;

@@ -386,7 +386,8 @@ console.log('Cycle Low (DCL / WCL) — tanpa repaint');
   const comp = Pine.compile(CY.indicator);
   const r = Pine.run(comp, cb, { timeframe: '1D' });
   ok(!r.error, 'jalan tanpa error ' + (r.error || ''));
-  const perm = r.drawings.label.filter((l) => !l.deleted && !/Prediksi/.test(l.props.tooltip));
+  const isCyc = (l) => !l.deleted && /^(DCL|WCL)$/.test(l.props.text);
+  const perm = r.drawings.label.filter(isCyc);
   const D = perm.filter((l) => l.props.text === 'DCL').map((l) => l.props.x).sort((a, b) => a - b);
   const W = perm.filter((l) => l.props.text === 'WCL').map((l) => l.props.x).sort((a, b) => a - b);
   const gaps = D.slice(1).map((x, k) => x - D[k]);
@@ -400,7 +401,7 @@ console.log('Cycle Low (DCL / WCL) — tanpa repaint');
   // tanpa repaint: label dari data terpotong == label run penuh yang sudah ditulis sebelum titik potong
   let same = 0;
   for (const cut of [400, 700, 1000, 1300]) {
-    const a = Pine.run(comp, cb.slice(0, cut), { timeframe: '1D' }).drawings.label.filter((l) => !l.deleted && !/Prediksi/.test(l.props.tooltip)).map((l) => l.props.text + l.props.x + ':' + l.props.y).sort().join();
+    const a = Pine.run(comp, cb.slice(0, cut), { timeframe: '1D' }).drawings.label.filter(isCyc).map((l) => l.props.text + l.props.x + ':' + l.props.y).sort().join();
     const b = perm.filter((l) => l.created < cut).map((l) => l.props.text + l.props.x + ':' + l.props.y).sort().join();
     if (a === b) same++;
   }
@@ -416,6 +417,12 @@ console.log('Cycle Low (DCL / WCL) — tanpa repaint');
   ok(err.length >= 10 && err[err.length >> 1] < 8, `prediksi harga DCL (terkunci di awal band): selisih median ${err[err.length >> 1].toFixed(1)}% dari ${err.length} siklus`);
   const tip = (sym) => (Pine.run(comp, cb, { timeframe: '1D', symbol: sym }).drawings.label.find((l) => !l.deleted && /Prediksi DCL/.test(l.props.tooltip)) || { props: { tooltip: '' } }).props.tooltip;
   ok(/preset ENAUSDT/.test(tip('ENAUSDT')) && !/preset ENAUSDT/.test(tip('BTCUSDT')), 'preset Auto: ENAUSDT memakai setelan hasil tuning ENA, koin lain tidak');
+  // penanda news: di candle tanggal kejadian, FOMC/unlock hanya jika dinyalakan, jadwal mendatang di area masa depan
+  const news = r.drawings.label.filter((l) => !l.deleted && /·/.test(l.props.tooltip || '') && !/^(DCL|WCL)/.test(l.props.text));
+  const covid = news.find((l) => /COVID/.test(l.props.text));
+  ok(covid && cb[covid.props.x].time === Date.UTC(2020, 2, 12) && !news.some((l) => /FOMC|Unlock/.test(l.props.text)), `penanda news di candle kejadian (${news.length} penanda, COVID di ${covid ? new Date(cb[covid.props.x].time).toISOString().slice(0, 10) : '?'})`);
+  const rf = Pine.run(comp, cb, { timeframe: '1D', inputs: { 'FOMC (rapat suku bunga The Fed)': true } }).drawings.label.filter((l) => !l.deleted && /FOMC/.test(l.props.text));
+  ok(rf.length > 10 && rf.every((l) => l.props.x >= cb.length) && rf.some((l) => /akan datang/.test(l.props.tooltip)), `FOMC (dinyalakan) tampil sebagai jadwal mendatang (${rf.length} penanda)`);
 }
 
 console.log('Scanner sinyal');
