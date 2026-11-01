@@ -27,6 +27,8 @@
   const TFS = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w'];
   const GAP = 'rgba(0,0,0,0)';
   const PALETTE = ['#2962FF', '#FF9800', '#E040FB', '#00BCD4', '#F7C948', '#4CAF50', '#FF5252'];
+  // news tambahan pengguna: [{d: 'YYYY-MM-DD', k: 0|1, s: teks}]
+  let customNews = store.get('customNews', []);
   const settings = store.get('settings', { symbol: 'BTCUSDT', tf: '1h', count: 3000, bottomH: 280, collapsed: false });
 
   const S = {
@@ -326,6 +328,16 @@
       st.trades.forEach((t) => mk(t, false));
       st.openTrades.forEach((t) => mk(t, true));
     }
+    // news tambahan pengguna → penanda di atas candle (bersama penanda news indikator Cycle Low)
+    if (customNews.length && S.scripts.some((x) => x.enabled && /indicator\("Cycle Low/.test(x.code)) && bars.length) {
+      for (const n of customNews) {
+        const t = Date.parse(n.d + 'T00:00:00Z');
+        if (t < bars[0].time || t > bars[bars.length - 1].time + 864e5) continue;
+        let i = bars.findIndex((b) => b.time + (bars.length > 1 ? bars[1].time - bars[0].time : 864e5) > t);
+        if (i < 0) i = bars.length - 1;
+        cm.push({ i, m: { time: ct(bars[i].time), position: 'aboveBar', color: +n.k ? '#5d6b8a' : '#e91e63', shape: 'square', text: (+n.k ? '📌 ' : '📰 ') + n.s } });
+      }
+    }
     cm.sort((a, b) => a.i - b.i);
     view.candleMarkers = cm;
 
@@ -462,6 +474,9 @@
   // dan baris siklus berjalan berisi daftar "berjaga-jaga" (jadwal mendatang & guncangan baru)
   // ------------------------------------------------------------------
   const CycleLib = window.LunaCycle;
+  const allEvents = () => ((CycleLib && CycleLib.EVENTS) || []).map((e) => ({ t: Date.parse(e[0] + 'T00:00:00Z'), k: e[1], s: e[2], l: e[3] }))
+    .concat(customNews.map((n) => ({ t: Date.parse(n.d + 'T00:00:00Z'), k: +n.k, s: (+n.k ? '📌 ' : '📰 ') + n.s, l: n.s + ' (news tambahan Anda)', custom: true })))
+    .sort((a, b) => a.t - b.t);
   const fmtDay = (t) => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
   const EV_KIND = ['besar', 'FOMC', 'unlock ENA'];
   function renderCycles(force) {
@@ -483,7 +498,7 @@
     const labs = res.drawings.label.filter((l) => !l.deleted && l.created <= end);
     const dcl = labs.filter((l) => l.props.text === 'DCL').sort((a, b) => a.props.x - b.props.x);
     const wclX = new Set(labs.filter((l) => l.props.text === 'WCL').map((l) => l.props.x));
-    const events = ((CycleLib && CycleLib.EVENTS) || []).map((e) => ({ t: Date.parse(e[0] + 'T00:00:00Z'), k: e[1], s: e[2], l: e[3] }));
+    const events = allEvents();
     const evIn = (t0, t1, kinds) => events.filter((e) => e.t >= t0 && e.t < t1 && kinds.includes(e.k));
     const evTxt = (list) => list.map((e) => `<span class="ev ev${e.k}" title="${esc(fmtDay(e.t) + ' · ' + e.l)}">${esc(e.s)} <span class="muted">${fmtDay(e.t).slice(0, 6)}</span></span>`).join(' ') || '<span class="muted">—</span>';
     const nowT = bars[end].time;
@@ -524,6 +539,34 @@
       Studi Apr 2024 – Nov 2026: ±17–20% cycle low (ENA/BTC) terjadi dekat guncangan (perang, hack, krisis) vs ±7% kebetulan; setelah guncangan, low ENA langsung terbentuk ≤7 hari hanya di 5 dari 14 kasus.
       FOMC & unlock ENA tidak terbukti memengaruhi waktu low. Guncangan tak terjadwal tidak bisa diprediksi — daftar news perlu diperbarui manual.`;
   }
+  function renderNewsList() {
+    $('nw-list').innerHTML = customNews.length
+      ? customNews.map((n, i) => `<span class="ev ev${+n.k ? 1 : 0}">${esc(n.d)} · ${esc(n.s)} <button class="x" data-del="${i}" title="Hapus">×</button></span>`).join(' ')
+      : '';
+  }
+  $('nw-date').value = new Date().toISOString().slice(0, 10);
+  $('nw-add').onclick = () => {
+    const d = $('nw-date').value, txt = $('nw-text').value.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !txt) { log('News: isi tanggal dan teks kejadian dulu.', true); return; }
+    customNews.push({ d, k: +$('nw-kind').value, s: txt });
+    customNews.sort((a, b) => (a.d < b.d ? -1 : 1));
+    store.set('customNews', customNews);
+    $('nw-text').value = '';
+    renderNewsList();
+    buildView();
+    renderCycles(true);
+  };
+  $('nw-list').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-del]');
+    if (!b) return;
+    customNews.splice(+b.dataset.del, 1);
+    store.set('customNews', customNews);
+    renderNewsList();
+    buildView();
+    renderCycles(true);
+  });
+  renderNewsList();
+
   $('cycles-table').addEventListener('click', (e) => {
     const tr = e.target.closest('tr[data-x]');
     if (!tr) return;

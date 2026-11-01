@@ -31,6 +31,8 @@
     ['2026-06-09', 0, '⚔ AS→Iran', 'Serangan AS ke Iran (9–11 Juni)'],
     ['2026-09-24', 0, '🔓 Hack Bitget', 'Bursa Bitget diretas ±$352 juta'],
     ['2026-10-09', 0, '📉 Deleveraging', 'Gelombang likuidasi long, BTC turun ke ±$77 ribu'],
+    ['2026-10-22', 0, '📉 Jual saham AI', 'Aksi jual saham AI/chip ("Black Wednesday"); Nasdaq turun ±6% sejak 6 Okt'],
+    ['2026-10-29', 0, '🔓 Hack Binance', 'Binance diretas ±$6,3 miliar (Korea Utara/TraderTraitor, hot wallet); penarikan dihentikan sementara, BTC turun ±5%'],
   ];
   for (const d of ['2024-05-01', '2024-06-12', '2024-07-31', '2024-09-18', '2024-11-07', '2024-12-18', '2025-01-29', '2025-03-19', '2025-05-07', '2025-06-18', '2025-07-30', '2025-09-17', '2025-10-29', '2025-12-10', '2026-01-28', '2026-03-18', '2026-04-29', '2026-06-17', '2026-07-29', '2026-09-16', '2026-10-28', '2026-12-09']) EVENTS.push([d, 1, '🏦 FOMC', 'Keputusan suku bunga The Fed (FOMC)' + (d === '2026-12-09' ? ' — tanggal perkiraan' : '')]);
   for (let m = 0; m < 18; m++) EVENTS.push([new Date(Date.UTC(2025, 3 + m, 2)).toISOString().slice(0, 10), 2, '🔑 Unlock', 'Unlock token ENA bulanan (tanggal perkiraan)']);
