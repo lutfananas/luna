@@ -254,7 +254,7 @@ if barstate.islast and showProj and not na(lastD)
         pW := label.new(xW, predW * (xW == xD and math.abs(predW - predD) < predD * 0.03 ? 0.97 : 1), "WCL " + fmtP(predW) + (lockedW ? "" : " (sementara)"), style = label.style_label_up, color = color.new(colW, lockedW ? 55 : 75), textcolor = color.white, size = size.normal, tooltip = "Prediksi WCL berikutnya: " + fmtP(predW) + " (zona 50%: " + fmtP(zLoW) + " – " + fmtP(zHiW) + "), sekitar minggu ke-" + str.tostring(math.round(lenW / bpd / 7)) + " siklus. " + (lockedW ? "Terkunci sejak awal timing band." : "Sementara: mengikuti close terakhir sampai timing band dimulai."))
 ` + NEWS;
 
-  const api = { indicator };
+  const api = { indicator, EVENTS };
   root.LunaCycle = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

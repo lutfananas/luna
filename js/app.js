@@ -443,7 +443,83 @@
     buildView();
     renderScriptList();
     renderTester(true);
+    renderCycles();
   }
+
+  // ------------------------------------------------------------------
+  // Tabel "Siklus & News" (dari indikator Cycle Low): tiap siklus + news selama siklus,
+  // dan baris siklus berjalan berisi daftar "berjaga-jaga" (jadwal mendatang & guncangan baru)
+  // ------------------------------------------------------------------
+  const CycleLib = window.LunaCycle;
+  const fmtDay = (t) => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const EV_KIND = ['besar', 'FOMC', 'unlock ENA'];
+  function renderCycles(force) {
+    if (!force && !document.querySelector('[data-pane="cycles"]').classList.contains('active')) return;
+    const sc = S.scripts.find((x) => x.enabled && /indicator\("Cycle Low/.test(x.code));
+    const res = sc && S.results.get(sc.id);
+    const bars = S.bars;
+    if (!res || res.error || !res.drawings || !bars.length) {
+      $('cycles-empty').classList.remove('hidden');
+      $('cycles').classList.add('hidden');
+      return;
+    }
+    $('cycles-empty').classList.add('hidden');
+    $('cycles').classList.remove('hidden');
+    const end = endIdx();
+    const live = end >= bars.length - 1;
+    const step = bars.length > 1 ? bars[1].time - bars[0].time : 864e5;
+    const tOf = (x) => (x <= bars.length - 1 ? bars[Math.max(0, Math.round(x))].time : bars[bars.length - 1].time + (x - (bars.length - 1)) * step);
+    const labs = res.drawings.label.filter((l) => !l.deleted && l.created <= end);
+    const dcl = labs.filter((l) => l.props.text === 'DCL').sort((a, b) => a.props.x - b.props.x);
+    const wclX = new Set(labs.filter((l) => l.props.text === 'WCL').map((l) => l.props.x));
+    const events = ((CycleLib && CycleLib.EVENTS) || []).map((e) => ({ t: Date.parse(e[0] + 'T00:00:00Z'), k: e[1], s: e[2], l: e[3] }));
+    const evIn = (t0, t1, kinds) => events.filter((e) => e.t >= t0 && e.t < t1 && kinds.includes(e.k));
+    const evTxt = (list) => list.map((e) => `<span class="ev ev${e.k}" title="${esc(fmtDay(e.t) + ' · ' + e.l)}">${esc(e.s)} <span class="muted">${fmtDay(e.t).slice(0, 6)}</span></span>`).join(' ') || '<span class="muted">—</span>';
+    const nowT = bars[end].time;
+    let html = '<thead><tr><th>Siklus</th><th>Low siklus</th><th>Harga low</th><th>Durasi</th><th>Status</th><th>News selama siklus / berjaga-jaga</th></tr></thead><tbody>';
+    // siklus berjalan
+    if (dcl.length) {
+      const last = dcl[dcl.length - 1];
+      const t0 = tOf(last.props.x);
+      const days = Math.round((nowT - t0) / 864e5);
+      const band = live && res.drawings.box.find((b) => !b.deleted && /^zona DCL/.test(b.props.text || ''));
+      const pred = live && labs.find((l) => /^DCL /.test(l.props.text) && /Prediksi/.test(l.props.tooltip || ''));
+      const bandTxt = band ? `band ${fmtDay(tOf(band.props.left)).slice(0, 6)} – ${fmtDay(tOf(band.props.right)).slice(0, 6)}` : '';
+      const horizon = band ? Math.max(tOf(band.props.right), nowT + 30 * 864e5) : nowT + 45 * 864e5;
+      const upcoming = live ? evIn(nowT + 1, horizon + 7 * 864e5, [0, 1, 2]) : [];
+      const recentShock = events.filter((e) => e.k === 0 && e.t <= nowT && e.t > nowT - 7 * 864e5);
+      const watch = [];
+      for (const e of recentShock) watch.push(`<span class="ev ev0 warn" title="${esc(e.l)}">⚠ ${esc(e.s)} ${fmtDay(e.t).slice(0, 6)}: guncangan baru — low siklus bisa datang lebih cepat / lebih dalam</span>`);
+      for (const e of upcoming) watch.push(`<span class="ev ev${e.k}" title="${esc(e.l)}">${esc(e.s)} ${fmtDay(e.t).slice(0, 6)} <span class="muted">(${Math.round((e.t - nowT) / 864e5)} hari lagi)</span></span>`);
+      const sinceNews = evIn(t0 + 1, nowT + 1, [0]);
+      html += `<tr class="cur" data-x="${last.props.x}"><td><b>▶ Berjalan</b></td><td>sejak DCL ${fmtDay(t0)}</td>
+        <td>${pred ? `<b>prediksi ${esc(pred.props.text.replace(/^DCL /, ''))}</b>` : '<span class="muted">—</span>'}</td>
+        <td>hari ke-${days}</td><td class="muted">${esc(bandTxt)}</td>
+        <td class="wrap">${sinceNews.length ? 'Sudah terjadi: ' + evTxt(sinceNews) + '<br>' : ''}<b>Berjaga-jaga:</b> ${watch.join(' ') || '<span class="muted">tidak ada jadwal kejadian dalam band ini</span>'}</td></tr>`;
+    }
+    for (let k = dcl.length - 1; k >= 0; k--) {
+      const l = dcl[k], t0 = tOf(l.props.x), t1 = k + 1 < dcl.length ? tOf(dcl[k + 1].props.x) : null;
+      const failed = /failed/.test(l.props.tooltip || '');
+      const isW = wclX.has(l.props.x);
+      // kejadian ≤3 hari sebelum sebuah low dihitung ke siklus yang low-nya dipicu kejadian itu
+      const news = evIn(t0 - 3 * 864e5, t1 ? t1 - 3 * 864e5 : nowT + 1, [0]);
+      html += `<tr data-x="${l.props.x}"><td>#${k + 1}</td><td>${fmtDay(t0)}</td><td>${fmtPx(l.props.y)}</td>
+        <td>${t1 ? Math.round((t1 - t0) / 864e5) + ' hari' : '<span class="muted">berjalan</span>'}</td>
+        <td>${isW ? '<span class="tag w">WCL</span> ' : ''}${failed ? '<span class="tag f">failed</span>' : '<span class="tag d">DCL</span>'}</td>
+        <td class="wrap">${evTxt(news)}</td></tr>`;
+    }
+    $('cycles-table').innerHTML = html + '</tbody>';
+    $('cycles-note').innerHTML = `Klik baris untuk melihat siklus di chart. News "selama siklus" = peristiwa besar dari 3 hari sebelum low sampai low berikutnya.
+      Studi Apr 2024 – Nov 2026: ±17–20% cycle low (ENA/BTC) terjadi dekat guncangan (perang, hack, krisis) vs ±7% kebetulan; setelah guncangan, low ENA langsung terbentuk ≤7 hari hanya di 5 dari 14 kasus.
+      FOMC & unlock ENA tidak terbukti memengaruhi waktu low. Guncangan tak terjadwal tidak bisa diprediksi — daftar news perlu diperbarui manual.`;
+  }
+  $('cycles-table').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-x]');
+    if (!tr) return;
+    const x = +tr.dataset.x;
+    chart.timeScale().setVisibleLogicalRange({ from: x - 60, to: x + 60 });
+  });
+  document.querySelector('[data-tabs="bottom"] [data-tab="cycles"]').addEventListener('click', () => renderCycles(true));
 
   // ------------------------------------------------------------------
   // Daftar script
@@ -849,6 +925,7 @@
     store.set('selectedStrategy', S.selectedStrategy);
     buildView();
     renderTester(true);
+    renderCycles();
   };
 
   // ------------------------------------------------------------------
@@ -886,6 +963,7 @@
   function afterReplayMove() {
     renderLegend(null);
     renderTester(false);
+    renderCycles();
     renderPaper();
     const b = S.bars[R.idx];
     status(`Replay: ${fmtTime(b.time)} · bar ${R.idx + 1}/${S.bars.length}`);
@@ -932,6 +1010,7 @@
     $('paper').classList.add('hidden');
     applyData(endIdx());
     renderTester(true);
+    renderCycles();
     renderLegend(null);
     status('Replay selesai');
   }
@@ -1161,6 +1240,7 @@
         for (const sc of S.scripts) if (sc.enabled) runScriptQuiet(sc);
         buildView();
         renderTester(true);
+        renderCycles();
       }, closed || isNew ? 50 : 3000);
     }
     renderLegend(null);
