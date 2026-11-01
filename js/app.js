@@ -52,13 +52,24 @@
       if (seen.has(e.key)) continue;
       seen.add(e.key);
       if (S.scripts.some((x) => x.name === e.name)) continue; // sudah ada (mis. data browser terhapus sebagian)
-      S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: e.enabled, inputs: {} });
+      S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: e.enabled, inputs: {}, exampleKey: e.key, exampleHash: Examples.hashCode(e.code) });
     }
-    // contoh bawaan yang diperbarui: ganti hanya jika kode tersimpan masih persis versi lama
+    // contoh bawaan yang diperbarui: ganti hanya jika kode tersimpan masih persis versi bawaan
+    // (sama dengan versi saat dipasang, atau salah satu versi lama di HISTORY) — script yang diedit tidak disentuh
+    const updated = [];
     for (const e of Examples.EXAMPLES) {
-      const olds = (Examples.LEGACY && Examples.LEGACY[e.key]) || [];
-      for (const sc of S.scripts) if (olds.some((o) => o.trim() === String(sc.code).trim())) sc.code = e.code;
+      const cur = Examples.hashCode(e.code);
+      const olds = new Set(((Examples.HISTORY && Examples.HISTORY[e.key]) || []).concat(((Examples.LEGACY && Examples.LEGACY[e.key]) || []).map(Examples.hashCode)));
+      for (const sc of S.scripts) {
+        const h = Examples.hashCode(sc.code);
+        const pristine = (sc.exampleKey === e.key && sc.exampleHash === h) || olds.has(h);
+        if (!pristine || (sc.exampleKey && sc.exampleKey !== e.key)) continue;
+        if (h !== cur) { sc.code = e.code; updated.push(e.name); }
+        sc.exampleKey = e.key;
+        sc.exampleHash = cur;
+      }
     }
+    if (updated.length) setTimeout(() => log(`Script bawaan diperbarui ke versi terbaru: ${[...new Set(updated)].join(', ')}`), 0);
     store.set('seenExamples', [...seen]);
     store.set('scripts', S.scripts);
   }
@@ -776,7 +787,7 @@
   $('btn-new-ind').onclick = () => newScript(Examples.TEMPLATE_INDICATOR);
   $('btn-new-strat').onclick = () => newScript(Examples.TEMPLATE_STRATEGY);
   $('btn-reset-examples').onclick = () => {
-    for (const e of Examples.EXAMPLES) S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: false, inputs: {} });
+    for (const e of Examples.EXAMPLES) S.scripts.push({ id: uid(), name: e.name, code: e.code, enabled: false, inputs: {}, exampleKey: e.key, exampleHash: Examples.hashCode(e.code) });
     saveScripts();
     renderScriptList();
   };

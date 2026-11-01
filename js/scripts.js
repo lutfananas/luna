@@ -848,6 +848,35 @@ if ta.crossunder(fast, slow)
     strategy.close("Long")
 `],
   };
+  // Hash (FNV-1a, kode di-trim) semua versi LAMA tiap contoh bawaan. Salinan tersimpan yang kodenya
+  // sama dengan salah satu versi ini = belum diedit pengguna → diperbarui otomatis ke versi terbaru.
+  // Dibuat ulang dengan: node tools/gen-script-history.js
+  const HISTORY = {
+    "ema-cross": [
+      "08417d05",
+      "3aacc77d"
+    ],
+    "crt-ind": [
+      "4a6e4d97",
+      "9e2534d2"
+    ],
+    "crt-strat": [
+      "50cd0678",
+      "65cc2f95",
+      "970ea56e"
+    ],
+    "cycle-low": [
+      "5b6ff5d5",
+      "85a4796e",
+      "fe2b1ded"
+    ]
+  };
+  const hashCode = (code) => {
+    const s = String(code).trim();
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(16).padStart(8, '0');
+  };
   // contoh yang sudah ada sejak versi pertama (untuk migrasi data lama)
   const ORIGINAL_KEYS = ['ema-cross', 'rsi', 'macd', 'bb', 'supertrend', 'rsi-sltp', 'fn-var'];
 
@@ -872,7 +901,7 @@ if ta.crossunder(close, ma)
     strategy.close("Long")
 `;
 
-  const api = { EXAMPLES, LEGACY, ORIGINAL_KEYS, TEMPLATE_INDICATOR, TEMPLATE_STRATEGY };
+  const api = { EXAMPLES, LEGACY, HISTORY, hashCode, ORIGINAL_KEYS, TEMPLATE_INDICATOR, TEMPLATE_STRATEGY };
   root.LunaScripts = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
