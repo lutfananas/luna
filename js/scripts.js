@@ -866,6 +866,7 @@ if ta.crossunder(fast, slow)
       "970ea56e"
     ],
     "cycle-low": [
+      "204c8129",
       "5b6ff5d5",
       "85a4796e",
       "e84b3497",
