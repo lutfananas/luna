@@ -488,6 +488,8 @@ barcolor(naikBeruntun >= 4 ? color.lime : na)
       { key: 'crt-strat', name: 'SATTAM | CRT+TBS Strategy', enabled: false, code: CRT.strategy },
     );
   }
+  const CYCLE = root.LunaCycle || (typeof require !== 'undefined' ? require('./scripts-cycle.js') : null);
+  if (CYCLE) EXAMPLES.push({ key: 'cycle-low', name: 'Cycle Low (DCL / WCL)', enabled: true, code: CYCLE.indicator });
   const MYTT = root.LunaMyTT || (typeof require !== 'undefined' ? require('./scripts-mytt.js') : null);
   if (MYTT) {
     EXAMPLES.push(

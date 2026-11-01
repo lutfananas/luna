@@ -371,6 +371,38 @@ console.log('MyTT: rumus KDJ / DMI / BBI & rencana trade');
   ok(cnt > 5 && bad === 0, `setiap setup: SL di sisi rugi, TP1 < TP2 < TP3 searah (${cnt} setup, ${bad} salah)`);
 }
 
+console.log('Cycle Low (DCL / WCL)');
+{
+  const CY = require('../js/scripts-cycle.js');
+  // harga sintetis harian: siklus 60 hari + siklus 180 hari + tren naik kecil + noise
+  let seed = 3;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const cb = [];
+  for (let i = 0; i < 1500; i++) {
+    const c = 100 * (1 + 0.0004 * i) * (1 + 0.08 * Math.sin((2 * Math.PI * (i - 15)) / 60) + 0.12 * Math.sin((2 * Math.PI * (i - 45)) / 180)) * (1 + (rnd() - 0.5) * 0.01);
+    const o = i ? cb[i - 1].close : c;
+    cb.push({ time: Date.UTC(2020, 0, 1) + i * 86400e3, open: o, high: Math.max(o, c) * 1.003, low: Math.min(o, c) * 0.997, close: c, volume: 1 });
+  }
+  const r = Pine.run(Pine.compile(CY.indicator), cb, { timeframe: '1D' });
+  ok(!r.error, 'jalan tanpa error ' + (r.error || ''));
+  const lab = r.drawings.label.filter((l) => !l.deleted && !/Proyeksi/.test(l.props.tooltip)).map((l) => l.props).sort((a, b) => a.x - b.x);
+  const gaps = lab.slice(1).map((l, k) => l.x - lab[k].x);
+  const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+  ok(lab.length >= 20 && avg > 50 && avg < 70, `DCL terdeteksi tiap ±60 hari (${lab.length} low, rata-rata ${avg.toFixed(1)} hari)`);
+  const isTrough = (x) => cb.slice(Math.max(0, x - 10), x + 11).every((b) => b.low >= cb[x].low);
+  ok(lab.filter((l) => isTrough(l.x)).length >= lab.length * 0.8, 'DCL berada di lembah harga (low terendah ±10 hari)');
+  const w = lab.filter((l) => l.text === 'WCL');
+  const wg = w.slice(1).map((l, k) => l.x - w[k].x);
+  ok(w.length >= 5 && wg.every((g) => g >= 100 && g <= 260), `WCL terdeteksi (${w.length}×, jarak ${wg.join('/')} hari)`);
+  const cur = r.drawings.label.filter((l) => !l.deleted && /Proyeksi|siklus berjalan/.test(l.props.tooltip)).map((l) => l.props.text + ' (' + l.props.tooltip.split(':')[0] + ')');
+  ok(cur.some((t) => t.startsWith('DCL')), 'siklus berjalan ditandai (proyeksi / terkonfirmasi): ' + cur.join(', '));
+  // proyeksi di masa depan saat siklus baru dimulai (potong data tepat setelah sebuah DCL)
+  const lastDcl = lab.filter((l) => l.text === 'DCL').slice(-2)[0];
+  const r2 = Pine.run(Pine.compile(CY.indicator), cb.slice(0, lastDcl.x + 25), { timeframe: '1D' });
+  const fut = r2.drawings.label.filter((l) => !l.deleted && /Proyeksi DCL berikutnya/.test(l.props.tooltip));
+  ok(fut.length === 1 && fut[0].props.x > lastDcl.x + 25 - 1, `proyeksi DCL di candle masa depan (+${fut.length ? fut[0].props.x - (lastDcl.x + 24) : '?'} bar)`);
+}
+
 console.log('Scanner sinyal');
 {
   const SC = require('../js/scanner.js');
