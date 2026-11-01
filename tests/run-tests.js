@@ -371,7 +371,7 @@ console.log('MyTT: rumus KDJ / DMI / BBI & rencana trade');
   ok(cnt > 5 && bad === 0, `setiap setup: SL di sisi rugi, TP1 < TP2 < TP3 searah (${cnt} setup, ${bad} salah)`);
 }
 
-console.log('Cycle Low (DCL / WCL)');
+console.log('Cycle Low (DCL / WCL) — tanpa repaint');
 {
   const CY = require('../js/scripts-cycle.js');
   // harga sintetis harian: siklus 60 hari + siklus 180 hari + tren naik kecil + noise
@@ -383,24 +383,37 @@ console.log('Cycle Low (DCL / WCL)');
     const o = i ? cb[i - 1].close : c;
     cb.push({ time: Date.UTC(2020, 0, 1) + i * 86400e3, open: o, high: Math.max(o, c) * 1.003, low: Math.min(o, c) * 0.997, close: c, volume: 1 });
   }
-  const r = Pine.run(Pine.compile(CY.indicator), cb, { timeframe: '1D' });
+  const comp = Pine.compile(CY.indicator);
+  const r = Pine.run(comp, cb, { timeframe: '1D' });
   ok(!r.error, 'jalan tanpa error ' + (r.error || ''));
-  const lab = r.drawings.label.filter((l) => !l.deleted && !/Proyeksi/.test(l.props.tooltip)).map((l) => l.props).sort((a, b) => a.x - b.x);
-  const gaps = lab.slice(1).map((l, k) => l.x - lab[k].x);
+  const perm = r.drawings.label.filter((l) => !l.deleted && !/Prediksi/.test(l.props.tooltip));
+  const D = perm.filter((l) => l.props.text === 'DCL').map((l) => l.props.x).sort((a, b) => a - b);
+  const W = perm.filter((l) => l.props.text === 'WCL').map((l) => l.props.x).sort((a, b) => a - b);
+  const gaps = D.slice(1).map((x, k) => x - D[k]);
   const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
-  ok(lab.length >= 20 && avg > 50 && avg < 70, `DCL terdeteksi tiap ±60 hari (${lab.length} low, rata-rata ${avg.toFixed(1)} hari)`);
+  ok(D.length >= 20 && avg > 50 && avg < 70, `DCL terdeteksi tiap ±60 hari (${D.length} low, rata-rata ${avg.toFixed(1)} hari)`);
   const isTrough = (x) => cb.slice(Math.max(0, x - 10), x + 11).every((b) => b.low >= cb[x].low);
-  ok(lab.filter((l) => isTrough(l.x)).length >= lab.length * 0.8, 'DCL berada di lembah harga (low terendah ±10 hari)');
-  const w = lab.filter((l) => l.text === 'WCL');
-  const wg = w.slice(1).map((l, k) => l.x - w[k].x);
-  ok(w.length >= 5 && wg.every((g) => g >= 100 && g <= 260), `WCL terdeteksi (${w.length}×, jarak ${wg.join('/')} hari)`);
-  const cur = r.drawings.label.filter((l) => !l.deleted && /Proyeksi|siklus berjalan/.test(l.props.tooltip)).map((l) => l.props.text + ' (' + l.props.tooltip.split(':')[0] + ')');
-  ok(cur.some((t) => t.startsWith('DCL')), 'siklus berjalan ditandai (proyeksi / terkonfirmasi): ' + cur.join(', '));
-  // proyeksi di masa depan saat siklus baru dimulai (potong data tepat setelah sebuah DCL)
-  const lastDcl = lab.filter((l) => l.text === 'DCL').slice(-2)[0];
-  const r2 = Pine.run(Pine.compile(CY.indicator), cb.slice(0, lastDcl.x + 25), { timeframe: '1D' });
-  const fut = r2.drawings.label.filter((l) => !l.deleted && /Proyeksi DCL berikutnya/.test(l.props.tooltip));
-  ok(fut.length === 1 && fut[0].props.x > lastDcl.x + 25 - 1, `proyeksi DCL di candle masa depan (+${fut.length ? fut[0].props.x - (lastDcl.x + 24) : '?'} bar)`);
+  ok(D.filter(isTrough).length >= D.length * 0.8, 'DCL berada di lembah harga (low terendah ±10 hari)');
+  const wg = W.slice(1).map((x, k) => x - W[k]);
+  ok(W.length >= 5 && wg.every((g) => g >= 100 && g <= 260), `WCL terdeteksi (${W.length}×, jarak ${wg.join('/')} hari)`);
+  ok(perm.every((l) => l.created > l.props.x), 'label ditulis setelah low terkonfirmasi (tidak ada label di candle yang sedang berjalan)');
+  // tanpa repaint: label dari data terpotong == label run penuh yang sudah ditulis sebelum titik potong
+  let same = 0;
+  for (const cut of [400, 700, 1000, 1300]) {
+    const a = Pine.run(comp, cb.slice(0, cut), { timeframe: '1D' }).drawings.label.filter((l) => !l.deleted && !/Prediksi/.test(l.props.tooltip)).map((l) => l.props.text + l.props.x + ':' + l.props.y).sort().join();
+    const b = perm.filter((l) => l.created < cut).map((l) => l.props.text + l.props.x + ':' + l.props.y).sort().join();
+    if (a === b) same++;
+  }
+  ok(same === 4, `tanpa repaint: label identik di ${same}/4 titik potong`);
+  // prediksi harga & waktu DCL / WCL berikutnya
+  const pr = r.drawings.label.filter((l) => !l.deleted && /Prediksi/.test(l.props.tooltip));
+  const pD = pr.find((l) => l.props.text.startsWith('DCL ')), pW = pr.find((l) => l.props.text.startsWith('WCL '));
+  ok(pD && pW && pD.props.x >= cb.length && /\d/.test(pD.props.text) && pD.props.y > 0, `prediksi DCL & WCL berikutnya: "${pD && pD.props.text}", "${pW && pW.props.text}"`);
+  const pv = r.plots.find((p) => p.title === 'Prediksi harga DCL').values;
+  const err = [];
+  for (let k = 4; k < D.length; k++) { if (D[k] < D[k - 1] + 40) continue; const v = pv[D[k - 1] + 40]; err.push(Math.abs(cb[D[k]].low - v) / v * 100); }
+  err.sort((a, b) => a - b);
+  ok(err.length >= 10 && err[err.length >> 1] < 8, `prediksi harga DCL (terkunci di awal band): selisih median ${err[err.length >> 1].toFixed(1)}% dari ${err.length} siklus`);
 }
 
 console.log('Scanner sinyal');
