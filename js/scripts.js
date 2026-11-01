@@ -870,6 +870,7 @@ if ta.crossunder(fast, slow)
       "4e6ce948",
       "5b6ff5d5",
       "85a4796e",
+      "b27f296e",
       "e84b3497",
       "fcfb0fd0",
       "fe2b1ded"
