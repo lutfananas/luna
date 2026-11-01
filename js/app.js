@@ -644,16 +644,13 @@
         '<span class="muted">Status: hari < 15 — belum bisa dinilai (cek lagi di hari ke-15–25)</span>',
         '<span class="ev ev2">✓ Status: NORMAL / translasi kanan — historis 66–77% siklus seperti ini naik, DCL ditembus hanya 23–39%</span>',
         '<span class="ev ev0 warn">⚠ Status: TRANSLASI KIRI — historis 62–74% DCL kemudian ditembus: amankan profit, jangan tambah long</span>',
-        '<span class="ev ev0 warn">✕ Status: DCL DITEMBUS (failed cycle) — rencana entry batal; historis low berikutnya median 14% di bawah DCL. Tunggu DCL baru terkonfirmasi</span>',
+        '<span class="ev ev0 warn">✕ Status: DCL DITEMBUS (failed cycle) — historis low berikutnya median 14% di bawah DCL. Tunggu DCL baru terkonfirmasi</span>',
       ];
       const statTxt = '<br>' + (STAT[stv] || STAT[0]);
-      const planOf = (re) => labs.filter((l) => re.test(l.props.text) && l.created === last.created)[0];
-      const pE = planOf(/^ENTRY /), pS = planOf(/^SL /), pT = planOf(/^TP1 /);
-      const planTxt = pE ? `<br><b>Rencana entry (DCL ${fmtDay(t0).slice(0, 6)}):</b> <span class="ev ev1">${esc(pE.props.text)}</span> <span class="ev ev0" style="background:rgba(242,54,69,.28)">${esc(pS ? pS.props.text : '')}</span> <span class="ev ev2">${esc(pT ? pT.props.text : '')}</span> <span class="muted">tutup 50% di TP1 → SL ke entry → sisa keluar saat close &lt; MA 10 hari</span>` : '';
       html += `<tr class="cur" data-x="${last.props.x}"><td><b>▶ Berjalan</b></td><td>sejak DCL ${fmtDay(t0)}</td>
         <td>${pred ? `<b>prediksi ${esc(pred.props.text.replace(/^DCL /, ''))}</b>` : '<span class="muted">—</span>'}</td>
         <td>hari ke-${days}</td><td class="muted">${esc(bandTxt)}</td>
-        <td class="wrap">${sinceNews.length ? 'Sudah terjadi: ' + evTxt(sinceNews) + '<br>' : ''}<b>Berjaga-jaga:</b> ${watch.join(' ') || '<span class="muted">tidak ada jadwal kejadian dalam band ini</span>'}${statTxt}${planTxt}</td></tr>`;
+        <td class="wrap">${sinceNews.length ? 'Sudah terjadi: ' + evTxt(sinceNews) + '<br>' : ''}<b>Berjaga-jaga:</b> ${watch.join(' ') || '<span class="muted">tidak ada jadwal kejadian dalam band ini</span>'}${statTxt}</td></tr>`;
     }
     for (let k = dcl.length - 1; k >= 0; k--) {
       const l = dcl[k], t0 = tX(l), t1 = k + 1 < dcl.length ? tX(dcl[k + 1]) : null;
@@ -671,9 +668,7 @@
     $('cycles-note').innerHTML = `Klik baris untuk melihat siklus di chart. News "selama siklus" = peristiwa besar dari 3 hari sebelum low sampai low berikutnya.
       Studi Apr 2024 – Nov 2026: ±17–20% cycle low (ENA/BTC) terjadi dekat guncangan (perang, hack, krisis) vs ±7% kebetulan; setelah guncangan, low ENA langsung terbentuk ≤7 hari hanya di 5 dari 14 kasus.
       FOMC & unlock ENA tidak terbukti memengaruhi waktu low. Guncangan tak terjadwal tidak bisa diprediksi — daftar news perlu diperbarui manual.<br>
-      Rencana entry (setelah DCL terkonfirmasi, SL di bawah low DCL, 50% di +1.5R lalu SL ke entry, sisa keluar saat close &lt; MA 10 hari), uji 16 koin 1H Apr 2024 – Okt 2026:
-      tuning ±0.00R/trade, verifikasi +0.20R/trade (PF 1.38), 9/16 koin untung; ENA saja: tuning −0.27R, verifikasi +0.33R (5 trade). Bukan jaminan — pakai ukuran posisi kecil.
-      Cycle Low dihitung dari data harian di semua timeframe; timeframe kecil hanya untuk melihat detail entry.<br>
+      Cycle Low dihitung dari data harian di semua timeframe.<br>
       Studi 1.028 daily cycle (21 koin): DCL ditembus di 64% siklus (rally median +29%, puncak di 30% durasi) vs bertahan 36% (rally +84%, puncak di 75%).
       Penanda terbaik arah siklus: <b>translasi kiri</b> di hari 15–25 setelah DCL → 62–74% DCL kemudian ditembus (vs 23–39%). Setup DCL saat koin di bawah MA200 hari historis lebih baik (+0.30R) daripada di atasnya (−0.35R).`;
   }
