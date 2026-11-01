@@ -643,7 +643,7 @@
       const STAT = [
         '<span class="muted">Status: hari < 15 — belum bisa dinilai (cek lagi di hari ke-15–25)</span>',
         '<span class="ev ev2">✓ Status: NORMAL / translasi kanan — historis 66–77% siklus seperti ini naik, DCL ditembus hanya 23–39%</span>',
-        '<span class="ev ev0 warn">⚠ Status: TRANSLASI KIRI — historis 62–74% DCL kemudian ditembus: amankan profit, jangan tambah long</span>',
+        '<span class="ev ev0 warn">⚠ Status: TRANSLASI KIRI — historis 62–74% DCL kemudian ditembus. JANGAN entry/tambah long baru; posisi yang ada tetap ikuti SL · BE · MA 10 hari (keluar otomatis di tanda ini tidak terbukti lebih baik)</span>',
         '<span class="ev ev0 warn">✕ Status: DCL DITEMBUS (failed cycle) — historis low berikutnya median 14% di bawah DCL. Tunggu DCL baru terkonfirmasi</span>',
       ];
       const statTxt = '<br>' + (STAT[stv] || STAT[0]);

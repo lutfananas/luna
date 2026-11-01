@@ -249,7 +249,7 @@ if not na(lastD)
     if not warnLeft and not warnBreak and leftNow
         warnLeft := true
         if showStat
-            label.new(bar_index, high, "⚠ Translasi kiri", style = label.style_label_down, yloc = yloc.abovebar, color = color.new(#ff6d00, 10), textcolor = color.white, size = size.tiny, tooltip = "Puncak siklus sudah lewat & harga di bawah titik tengah: historis 62-74% DCL kemudian ditembus. Amankan profit / jangan tambah posisi long.")
+            label.new(bar_index, high, "⚠ Translasi kiri", style = label.style_label_down, yloc = yloc.abovebar, color = color.new(#ff6d00, 10), textcolor = color.white, size = size.tiny, tooltip = "Translasi kiri: puncak siklus datang lebih awal & harga sudah turun di bawah titik tengah DCL-puncak. Historis 62-74% DCL kemudian ditembus. Jangan entry / tambah long baru; posisi yang ada tetap ikuti rencana (SL, BE setelah TP1, keluar saat close < MA 10 hari) - keluar otomatis di tanda ini tidak terbukti lebih baik.")
     cycStatus := warnBreak ? 3 : leftNow or warnLeft ? 2 : dayN >= 15 ? 1 : 0
 plot(cycStatus, "Status siklus", display = display.none)
 plot(nz(lastDLow), "DCL terakhir", display = display.none)
