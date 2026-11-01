@@ -554,6 +554,39 @@
     .sort((a, b) => a.t - b.t);
   const fmtDay = (t) => new Date(t).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
   const EV_KIND = ['besar', 'FOMC', 'unlock ENA'];
+  // ── Siklus 4 tahunan BTC (halving) — dari data BTC harian ──
+  const HALVINGS = [['2016-07-09', 'Juli 2016'], ['2020-05-11', 'Mei 2020'], ['2024-04-20', 'April 2024'], ['2028-04-15', '±April 2028 (perkiraan)']].map(([d, n]) => ({ t: Date.parse(d + 'T00:00:00Z'), n }));
+  const btcDaily = { bars: null, at: 0, loading: false };
+  function btcDailyBars() {
+    if (settings.symbol === 'BTCUSDT' && dailyCache.key === 'BTCUSDT' && dailyCache.bars) return dailyCache.bars;
+    if (btcDaily.bars && Date.now() - btcDaily.at < 6 * 3600e3) return btcDaily.bars;
+    if (!btcDaily.loading && S.source === 'binance') {
+      btcDaily.loading = true;
+      Data.fetchBinance('BTCUSDT', '1d', 2000).then((b) => { Object.assign(btcDaily, { bars: b, at: Date.now(), loading: false }); renderCycles(); })
+        .catch(() => { btcDaily.loading = false; });
+    }
+    return btcDaily.bars;
+  }
+  function fourYearHtml() {
+    const b = btcDailyBars();
+    if (!b || b.length < 400) return '<span class="muted">Memuat data BTC harian untuk siklus 4 tahunan…</span>';
+    const M = 30.44 * 864e5, now = b[b.length - 1];
+    const h = HALVINGS.filter((x) => x.t <= now.time).pop(), next = HALVINGS.find((x) => x.t > now.time);
+    let pk = null; for (const x of b) if (x.time >= h.t && (!pk || x.high > pk.high)) pk = x;
+    let lo = null; for (const x of b) if (x.time > pk.time && (!lo || x.low < lo.low)) lo = x;
+    const mo = (now.time - h.t) / M, fromPk = (now.time - pk.time) / M;
+    const sma = (n) => (b.length >= n ? b.slice(-n).reduce((s2, x) => s2 + x.close, 0) / n : NaN);
+    const ma200 = sma(200), ma200w = sma(1400);
+    const phase = mo < 18 ? '🟢 BULL (0–18 bln setelah halving): puncak historis di bulan 17–18'
+      : mo < 30 ? '🔴 BEAR (18–30 bln): historis DCL ditembus 72%, siklus naik hanya 34%'
+        : '🟡 AKUMULASI (30+ bln): historis low bear 12 bln setelah puncak, lalu 12 bln berikutnya BTC +126–131%';
+    const fp = (v) => '$' + Math.round(v).toLocaleString('en-US');
+    return `<b>Siklus 4 tahunan BTC</b> · halving ${esc(h.n)} · sekarang <b>bulan ke-${mo.toFixed(1)}</b> → ${phase}<br>
+      Puncak siklus ${fmtDay(pk.time)} ${fp(pk.high)} (${((pk.time - h.t) / M).toFixed(1)} bln setelah halving; historis 17,3 & 18,0) ·
+      ${lo ? `low sejak puncak ${fmtDay(lo.time)} ${fp(lo.low)} (−${(100 * (1 - lo.low / pk.high)).toFixed(0)}%, ${((lo.time - pk.time) / M).toFixed(1)} bln setelah puncak; historis −84%/−78% di bulan 11,9/12,4)` : ''} ·
+      ${fromPk.toFixed(1)} bln sejak puncak · BTC ${fp(now.close)} ${now.close > ma200 ? 'di atas' : 'di bawah'} MA200 hari (${fp(ma200)})${isFinite(ma200w) ? ` & ${now.close > ma200w ? 'di atas' : 'di bawah'} MA200 minggu (${fp(ma200w)})` : ''}
+      ${next ? ` · halving berikutnya ${esc(next.n)} (${((next.t - now.time) / M).toFixed(1)} bln lagi)` : ''}`;
+  }
   function renderCycles(force) {
     if (!force && !document.querySelector('[data-pane="cycles"]').classList.contains('active')) return;
     const sc = S.scripts.find((x) => x.enabled && /indicator\("Cycle Low/.test(x.code));
@@ -596,13 +629,22 @@
       for (const e of recentShock) watch.push(`<span class="ev ev0 warn" title="${esc(e.l)}">⚠ ${esc(e.s)} ${fmtDay(e.t).slice(0, 6)}: guncangan baru — low siklus bisa datang lebih cepat / lebih dalam</span>`);
       for (const e of upcoming) watch.push(`<span class="ev ev${e.k}" title="${esc(e.l)}">${esc(e.s)} ${fmtDay(e.t).slice(0, 6)} <span class="muted">(${Math.round((e.t - nowT) / 864e5)} hari lagi)</span></span>`);
       const sinceNews = evIn(t0 + 1, nowT + 1, [0]);
+      const stPlot = res.plots.find((p) => p.title === 'Status siklus');
+      const stv = stPlot ? stPlot.values[Math.min(end, stPlot.values.length - 1)] : 0;
+      const STAT = [
+        '<span class="muted">Status: hari < 15 — belum bisa dinilai (cek lagi di hari ke-15–25)</span>',
+        '<span class="ev ev2">✓ Status: NORMAL / translasi kanan — historis 66–77% siklus seperti ini naik, DCL ditembus hanya 23–39%</span>',
+        '<span class="ev ev0 warn">⚠ Status: TRANSLASI KIRI — historis 62–74% DCL kemudian ditembus: amankan profit, jangan tambah long</span>',
+        '<span class="ev ev0 warn">✕ Status: DCL DITEMBUS (failed cycle) — rencana entry batal; historis low berikutnya median 14% di bawah DCL. Tunggu DCL baru terkonfirmasi</span>',
+      ];
+      const statTxt = '<br>' + (STAT[stv] || STAT[0]);
       const planOf = (re) => labs.filter((l) => re.test(l.props.text) && l.created === last.created)[0];
       const pE = planOf(/^ENTRY /), pS = planOf(/^SL /), pT = planOf(/^TP1 /);
       const planTxt = pE ? `<br><b>Rencana entry (DCL ${fmtDay(t0).slice(0, 6)}):</b> <span class="ev ev1">${esc(pE.props.text)}</span> <span class="ev ev0" style="background:rgba(242,54,69,.28)">${esc(pS ? pS.props.text : '')}</span> <span class="ev ev2">${esc(pT ? pT.props.text : '')}</span> <span class="muted">tutup 50% di TP1 → SL ke entry → sisa keluar saat close &lt; MA 10 hari</span>` : '';
       html += `<tr class="cur" data-x="${last.props.x}"><td><b>▶ Berjalan</b></td><td>sejak DCL ${fmtDay(t0)}</td>
         <td>${pred ? `<b>prediksi ${esc(pred.props.text.replace(/^DCL /, ''))}</b>` : '<span class="muted">—</span>'}</td>
         <td>hari ke-${days}</td><td class="muted">${esc(bandTxt)}</td>
-        <td class="wrap">${sinceNews.length ? 'Sudah terjadi: ' + evTxt(sinceNews) + '<br>' : ''}<b>Berjaga-jaga:</b> ${watch.join(' ') || '<span class="muted">tidak ada jadwal kejadian dalam band ini</span>'}${planTxt}</td></tr>`;
+        <td class="wrap">${sinceNews.length ? 'Sudah terjadi: ' + evTxt(sinceNews) + '<br>' : ''}<b>Berjaga-jaga:</b> ${watch.join(' ') || '<span class="muted">tidak ada jadwal kejadian dalam band ini</span>'}${statTxt}${planTxt}</td></tr>`;
     }
     for (let k = dcl.length - 1; k >= 0; k--) {
       const l = dcl[k], t0 = tX(l), t1 = k + 1 < dcl.length ? tX(dcl[k + 1]) : null;
@@ -616,12 +658,15 @@
         <td class="wrap">${evTxt(news)}</td></tr>`;
     }
     $('cycles-table').innerHTML = html + '</tbody>';
+    $('cycles-4y').innerHTML = fourYearHtml();
     $('cycles-note').innerHTML = `Klik baris untuk melihat siklus di chart. News "selama siklus" = peristiwa besar dari 3 hari sebelum low sampai low berikutnya.
       Studi Apr 2024 – Nov 2026: ±17–20% cycle low (ENA/BTC) terjadi dekat guncangan (perang, hack, krisis) vs ±7% kebetulan; setelah guncangan, low ENA langsung terbentuk ≤7 hari hanya di 5 dari 14 kasus.
       FOMC & unlock ENA tidak terbukti memengaruhi waktu low. Guncangan tak terjadwal tidak bisa diprediksi — daftar news perlu diperbarui manual.<br>
       Rencana entry (setelah DCL terkonfirmasi, SL di bawah low DCL, 50% di +1.5R lalu SL ke entry, sisa keluar saat close &lt; MA 10 hari), uji 16 koin 1H Apr 2024 – Okt 2026:
       tuning ±0.00R/trade, verifikasi +0.20R/trade (PF 1.38), 9/16 koin untung; ENA saja: tuning −0.27R, verifikasi +0.33R (5 trade). Bukan jaminan — pakai ukuran posisi kecil.
-      Cycle Low dihitung dari data harian di semua timeframe; timeframe kecil hanya untuk melihat detail entry.`;
+      Cycle Low dihitung dari data harian di semua timeframe; timeframe kecil hanya untuk melihat detail entry.<br>
+      Studi 1.028 daily cycle (21 koin): DCL ditembus di 64% siklus (rally median +29%, puncak di 30% durasi) vs bertahan 36% (rally +84%, puncak di 75%).
+      Penanda terbaik arah siklus: <b>translasi kiri</b> di hari 15–25 setelah DCL → 62–74% DCL kemudian ditembus (vs 23–39%). Setup DCL saat koin di bawah MA200 hari historis lebih baik (+0.30R) daripada di atasnya (−0.35R).`;
   }
   function renderNewsList() {
     $('nw-list').innerHTML = customNews.length
