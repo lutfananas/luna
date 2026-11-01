@@ -252,3 +252,7 @@ button.sell { background: var(--red); border-color: var(--red); color: #fff; fon
 .nw-list .ev1 { background: rgba(93, 107, 138, 0.3); }
 .nw-list .x { border: none; background: transparent; color: var(--muted); padding: 0 4px; height: auto; cursor: pointer; }
 .cycles-4y { padding: 6px 8px 8px; font-size: 12px; line-height: 1.7; border-bottom: 1px solid var(--border); }
+.yr-line { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 6px 0; }
+.yr-line .yr { border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font-size: 11px; line-height: 1.5; opacity: 0.75; }
+.yr-line .yr.past { opacity: 0.5; }
+.yr-line .yr.now { opacity: 1; border-color: var(--yellow); background: rgba(247, 201, 72, 0.12); }

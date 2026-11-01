@@ -577,15 +577,24 @@
     const mo = (now.time - h.t) / M, fromPk = (now.time - pk.time) / M;
     const sma = (n) => (b.length >= n ? b.slice(-n).reduce((s2, x) => s2 + x.close, 0) / n : NaN);
     const ma200 = sma(200), ma200w = sma(1400);
-    const phase = mo < 18 ? '🟢 BULL (0–18 bln setelah halving): puncak historis di bulan 17–18'
-      : mo < 30 ? '🔴 BEAR (18–30 bln): historis DCL ditembus 72%, siklus naik hanya 34%'
-        : '🟡 AKUMULASI (30+ bln): historis low bear 12 bln setelah puncak, lalu 12 bln berikutnya BTC +126–131%';
+    // tahun ke berapa dalam siklus 4 tahunan (dihitung dari tanggal halving)
+    const Y = 365.25 * 864e5;
+    const yr = Math.min(4, Math.floor((now.time - h.t) / Y) + 1), dayInYr = Math.floor(((now.time - h.t) % Y) / 864e5) + 1;
+    const YEARS = [
+      ['Tahun 1', 'Pasca-halving: bull awal', 'Mei 2020–21 +562% · Apr 2024–25 +31%'],
+      ['Tahun 2', 'Puncak siklus (bln 17–18) lalu awal bear', 'Mei 2021–22 −41% · Apr 2025–26 −13% (puncak Okt 2025)'],
+      ['Tahun 3', 'Dasar bear market (low Des 2018 / Nov 2022) lalu mulai pulih', 'Jul 2018–19 +99% · Mei 2022–23 −7%'],
+      ['Tahun 4', 'Pemulihan menuju halving berikutnya', 'Jul 2019–20 −24% (COVID) · Mei 2023–24 +127%'],
+    ];
+    const yStart = (k) => fmtDay(h.t + (k - 1) * Y).slice(3);
+    const tl = YEARS.map((y, k) => `<span class="yr ${k + 1 === yr ? 'now' : k + 1 < yr ? 'past' : ''}" title="${esc(y[2])}"><b>${y[0]}</b> <span class="muted">${yStart(k + 1)}</span><br>${esc(y[1])}${k + 1 === yr ? `<br><b>◀ SEKARANG · hari ke-${dayInYr}/365</b>` : ''}</span>`).join('');
     const fp = (v) => '$' + Math.round(v).toLocaleString('en-US');
-    return `<b>Siklus 4 tahunan BTC</b> · halving ${esc(h.n)} · sekarang <b>bulan ke-${mo.toFixed(1)}</b> → ${phase}<br>
-      Puncak siklus ${fmtDay(pk.time)} ${fp(pk.high)} (${((pk.time - h.t) / M).toFixed(1)} bln setelah halving; historis 17,3 & 18,0) ·
-      ${lo ? `low sejak puncak ${fmtDay(lo.time)} ${fp(lo.low)} (−${(100 * (1 - lo.low / pk.high)).toFixed(0)}%, ${((lo.time - pk.time) / M).toFixed(1)} bln setelah puncak; historis −84%/−78% di bulan 11,9/12,4)` : ''} ·
-      ${fromPk.toFixed(1)} bln sejak puncak · BTC ${fp(now.close)} ${now.close > ma200 ? 'di atas' : 'di bawah'} MA200 hari (${fp(ma200)})${isFinite(ma200w) ? ` & ${now.close > ma200w ? 'di atas' : 'di bawah'} MA200 minggu (${fp(ma200w)})` : ''}
-      ${next ? ` · halving berikutnya ${esc(next.n)} (${((next.t - now.time) / M).toFixed(1)} bln lagi)` : ''}`;
+    return `<b>Siklus 4 tahunan BTC</b> (halving ${esc(h.n)} → ${esc(next ? next.n : '?')}): sekarang <b>TAHUN KE-${yr} dari 4</b>
+      <div class="yr-line">${tl}</div>
+      <span class="muted">Puncak siklus ini ${fmtDay(pk.time)} ${fp(pk.high)} (${((pk.time - h.t) / M).toFixed(1)} bln setelah halving; historis 17,3 & 18,0) ·
+      ${lo ? `low sejak puncak ${fmtDay(lo.time)} ${fp(lo.low)} (−${(100 * (1 - lo.low / pk.high)).toFixed(0)}%, ${((lo.time - pk.time) / M).toFixed(1)} bln setelah puncak; historis −84%/−78% sekitar 12 bln setelah puncak)` : ''} ·
+      BTC ${fp(now.close)} ${now.close > ma200 ? 'di atas' : 'di bawah'} MA200 hari (${fp(ma200)})${isFinite(ma200w) ? ` & ${now.close > ma200w ? 'di atas' : 'di bawah'} MA200 minggu (${fp(ma200w)})` : ''}.
+      Historis setelah low bear: 12 bln kemudian BTC +126% (2019) / +131% (2023).</span>`;
   }
   function renderCycles(force) {
     if (!force && !document.querySelector('[data-pane="cycles"]').classList.contains('active')) return;
