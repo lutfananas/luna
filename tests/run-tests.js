@@ -414,6 +414,8 @@ console.log('Cycle Low (DCL / WCL) — tanpa repaint');
   for (let k = 4; k < D.length; k++) { if (D[k] < D[k - 1] + 40) continue; const v = pv[D[k - 1] + 40]; err.push(Math.abs(cb[D[k]].low - v) / v * 100); }
   err.sort((a, b) => a - b);
   ok(err.length >= 10 && err[err.length >> 1] < 8, `prediksi harga DCL (terkunci di awal band): selisih median ${err[err.length >> 1].toFixed(1)}% dari ${err.length} siklus`);
+  const tip = (sym) => (Pine.run(comp, cb, { timeframe: '1D', symbol: sym }).drawings.label.find((l) => !l.deleted && /Prediksi DCL/.test(l.props.tooltip)) || { props: { tooltip: '' } }).props.tooltip;
+  ok(/preset ENAUSDT/.test(tip('ENAUSDT')) && !/preset ENAUSDT/.test(tip('BTCUSDT')), 'preset Auto: ENAUSDT memakai setelan hasil tuning ENA, koin lain tidak');
 }
 
 console.log('Scanner sinyal');
