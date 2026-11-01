@@ -113,6 +113,15 @@
             <div id="cycles-empty" class="empty">Aktifkan indikator <b>Cycle Low (DCL / WCL)</b> di tab Script untuk melihat tabel siklus &amp; news.</div>
             <div id="cycles" class="hidden">
               <div class="table-wrap"><table id="cycles-table" class="table cycles-table"></table></div>
+              <div class="news-form">
+                <b>Tambah news sendiri</b>
+                <input id="nw-date" type="date" title="Tanggal kejadian (UTC)" />
+                <select id="nw-kind" title="Jenis"><option value="0">Guncangan / peristiwa besar</option><option value="1">Terjadwal (rapat, data, unlock)</option></select>
+                <input id="nw-text" type="text" maxlength="120" placeholder="mis. Hack bursa X $200 jt" />
+                <button id="nw-add" class="primary">Tambah</button>
+                <span class="muted">Tersimpan di browser ini · tampil di tabel &amp; chart</span>
+              </div>
+              <div id="nw-list" class="nw-list"></div>
               <div id="cycles-note" class="cycles-note muted"></div>
             </div>
           </div>
