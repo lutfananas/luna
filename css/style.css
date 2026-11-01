@@ -232,3 +232,16 @@ button.sell { background: var(--red); border-color: var(--red); color: #fff; fon
 .sig-foot { margin-top: 4px; font-size: 11px; color: var(--muted); }
 .sig-empty { padding: 16px 6px; text-align: center; color: var(--muted); }
 .perp { font-size: 9px; font-weight: 600; color: var(--yellow); border: 1px solid rgba(247, 201, 72, 0.5); border-radius: 3px; padding: 0 3px; margin-left: 4px; vertical-align: 1px; }
+
+/* ── Tabel Siklus & News ── */
+.cycles-table td.wrap { white-space: normal; line-height: 1.7; }
+.cycles-table tr.cur { background: rgba(41, 98, 255, 0.10); }
+.cycles-table .tag { font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; color: #fff; }
+.cycles-table .tag.d { background: #26a69a; }
+.cycles-table .tag.w { background: #ff9800; }
+.cycles-table .tag.f { background: #ef5350; }
+.cycles-table .ev { display: inline-block; font-size: 11px; padding: 0 6px; margin: 1px 2px 1px 0; border-radius: 3px; background: rgba(156, 39, 176, 0.22); }
+.cycles-table .ev1 { background: rgba(93, 107, 138, 0.3); }
+.cycles-table .ev2 { background: rgba(0, 131, 143, 0.28); }
+.cycles-table .ev.warn { background: rgba(242, 54, 69, 0.28); }
+.cycles-note { padding: 8px 4px 2px; font-size: 11px; line-height: 1.5; }

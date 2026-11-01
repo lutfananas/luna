@@ -69,6 +69,7 @@
           <button data-tab="tester" class="active">Strategy Tester</button>
           <button data-tab="trades">Daftar Trade</button>
           <button data-tab="paper">Replay Trading</button>
+          <button data-tab="cycles">📰 Siklus &amp; News</button>
           <button data-tab="log">Log <span id="log-badge" class="badge hidden"></span></button>
           <span class="spacer"></span>
           <select id="strategy-select" class="hidden" title="Pilih strategi"></select>
@@ -106,6 +107,13 @@
               </div>
               <div id="pp-stats" class="metrics small"></div>
               <div class="table-wrap"><table id="pp-table" class="table"></table></div>
+            </div>
+          </div>
+          <div data-pane="cycles" class="pane">
+            <div id="cycles-empty" class="empty">Aktifkan indikator <b>Cycle Low (DCL / WCL)</b> di tab Script untuk melihat tabel siklus &amp; news.</div>
+            <div id="cycles" class="hidden">
+              <div class="table-wrap"><table id="cycles-table" class="table cycles-table"></table></div>
+              <div id="cycles-note" class="cycles-note muted"></div>
             </div>
           </div>
           <div data-pane="log" class="pane">
