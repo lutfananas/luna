@@ -24,6 +24,8 @@ indicator("Cycle Low (DCL / WCL)", overlay = true, max_labels_count = 500, max_b
 // Durasi dalam hari, otomatis dikonversi ke jumlah bar timeframe chart (paling pas di 1D).
 // Ini kerangka analisis, bukan aturan pasti — durasi & kedalaman siklus bisa berbeda.
 
+gP = "Preset"
+preset = input.string("Auto", "Preset", options = ["Auto", "Manual (pakai input di bawah)", "ENAUSDT (hasil tuning)"], group = gP, tooltip = "Auto: chart ENAUSDT memakai setelan hasil tuning ENA (durasi minimum siklus 35 hari); koin lain memakai input di bawah.")
 gD = "Daily Cycle (DCL)"
 dMin    = input.int(40, "Durasi minimum siklus (hari)", minval = 5, group = gD)
 dMax    = input.int(70, "Batas akhir timing band (hari)", minval = 10, group = gD)
@@ -48,7 +50,9 @@ colFail  = input.color(color.new(#ef5350, 0), "Warna failed cycle", group = gS)
 bpd = 86400.0 / timeframe.in_seconds()
 toBars(d) =>
     math.max(1, math.round(d * bpd))
-dGap = toBars(dMin)
+// preset ENAUSDT: hasil tuning data ENA 1D (tuning Apr 2024–Des 2025, verifikasi Des 2025–Nov 2026)
+isEna = preset == "ENAUSDT (hasil tuning)" or (preset == "Auto" and str.contains(syminfo.ticker, "ENAUSDT"))
+dGap = toBars(isEna ? 35 : dMin)
 dEnd = toBars(dMax)
 wGap = toBars(wMin * 7)
 wEnd = toBars(wMax * 7)
@@ -169,7 +173,7 @@ if barstate.islast and showProj and not na(lastD)
     zLoD = refD * (1 - hDrop)
     zHiD = refD * (1 - lDrop)
     bD := box.new(lastD + dGap, zHiD, math.max(lastD + dEnd, xD + 1), zLoD, border_color = color.new(colD, 50), border_style = line.style_dashed, bgcolor = color.new(colD, 92), text = "zona DCL " + fmtP(zLoD) + " – " + fmtP(zHiD), text_size = size.tiny, text_color = color.new(colD, 10), text_valign = text.align_bottom)
-    pD := label.new(xD, predD, "DCL " + fmtP(predD) + (lockedD ? "" : " (sementara)"), style = label.style_label_up, color = color.new(colD, lockedD ? 55 : 75), textcolor = color.white, size = size.small, tooltip = "Prediksi DCL berikutnya: " + fmtP(predD) + " (zona 50%: " + fmtP(zLoD) + " – " + fmtP(zHiD) + "), sekitar hari ke-" + str.tostring(math.round(lenD / bpd)) + " siklus. " + (lockedD ? "Terkunci sejak awal timing band." : "Sementara: mengikuti close terakhir sampai timing band dimulai."))
+    pD := label.new(xD, predD, "DCL " + fmtP(predD) + (lockedD ? "" : " (sementara)"), style = label.style_label_up, color = color.new(colD, lockedD ? 55 : 75), textcolor = color.white, size = size.small, tooltip = "Prediksi DCL berikutnya: " + fmtP(predD) + " (zona 50%: " + fmtP(zLoD) + " – " + fmtP(zHiD) + "), sekitar hari ke-" + str.tostring(math.round(lenD / bpd)) + " siklus" + (isEna ? " · preset ENAUSDT" : "") + ". " + (lockedD ? "Terkunci sejak awal timing band." : "Sementara: mengikuti close terakhir sampai timing band dimulai."))
     if not na(lastW)
         lockedW = not na(wLockClose)
         lenW = med(wLens, toBars(wAvg0 * 7))
