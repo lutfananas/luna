@@ -1,41 +1,44 @@
 /*
- * Cycle Low (DCL / WCL) — teori siklus Hurst / Bob Loukas.
- * DCL = Daily Cycle Low, WCL = Weekly Cycle Low. Label padat = cycle low,
- * label pudar = proyeksi / kandidat yang belum terkonfirmasi.
+ * Cycle Low (DCL / WCL) — teori siklus Hurst / Bob Loukas, TANPA REPAINT.
+ * Label DCL/WCL ditulis saat terkonfirmasi dan tidak pernah dipindah/dihapus.
+ * Proyeksi (pudar) = prediksi waktu & harga DCL / WCL berikutnya.
  */
 (function (root) {
   'use strict';
 
   const indicator = String.raw`//@version=5
-indicator("Cycle Low (DCL / WCL)", overlay = true, max_labels_count = 500, max_boxes_count = 50)
+indicator("Cycle Low (DCL / WCL)", overlay = true, max_labels_count = 500, max_boxes_count = 50, max_lines_count = 50)
 
-// Teori siklus (J.M. Hurst, dipopulerkan di kripto oleh Bob Loukas).
-// Cara membaca cycle low seperti analis: dari seluruh chart, setelah kejadian.
-// DCL : lembah harga (low terendah ±10 hari). Lembah terdalam dipilih lebih dulu, dengan jarak
-//       minimal 40 hari antar DCL (daily cycle BTC ±50–70 hari). DCL lebih rendah dari DCL
-//       sebelumnya = failed cycle (merah).
-// WCL : DCL terdalam, dengan jarak minimal 16 minggu antar WCL (weekly cycle ±20–26 minggu).
-// Siklus yang sedang berjalan: low terendah setelah DCL terakhir + jarak minimal.
-//       Terkonfirmasi (label padat) saat ada candle tutup di atas high hari sebelumnya DAN
-//       di atas MA 10 hari. Belum terkonfirmasi → label pudar tepat di bawah candle kandidat.
-//       Sebelum timing band → label pudar di tanggal proyeksi + kotak timing band.
+// Teori siklus (J.M. Hurst, dipopulerkan di kripto oleh Bob Loukas) — TANPA REPAINT.
+// Candle diproses dari kiri ke kanan seperti saat live; label yang sudah ditulis tidak pernah berubah.
+// DCL : kandidat = low terendah (sekaligus low terendah 10 hari) setelah DCL sebelumnya + 40 hari,
+//       atau setelah 20 hari jika menembus DCL sebelumnya (failed cycle, merah).
+//       Terkonfirmasi saat candle tutup di atas high hari sebelumnya DAN di atas MA 10 hari.
+// WCL : DCL terdalam setelah WCL sebelumnya + 16 minggu (atau yang menembus WCL sebelumnya).
+//       Ditulis saat DCL berikutnya membentuk low yang lebih tinggi.
+// Proyeksi (pudar, dihitung ulang di candle terakhir):
+//       waktu = DCL/WCL terakhir + median durasi siklus; kotak = timing band.
+//       harga = close di candle pertama timing band × (1 − median penurunan historis dari titik
+//       itu ke low siklus); TERKUNCI sejak awal band. Sebelum band = "sementara" (ikut close terakhir).
+//       zona harga = kuartil 25–75% penurunan historis (± separuh kasus jatuh di zona ini).
 // Durasi dalam hari, otomatis dikonversi ke jumlah bar timeframe chart (paling pas di 1D).
-// Label riwayat bisa berubah saat data baru masuk (analisis siklus memang dibaca setelah kejadian).
-// Ini kerangka analisis, bukan aturan pasti — durasi siklus bisa memanjang/memendek.
+// Ini kerangka analisis, bukan aturan pasti — durasi & kedalaman siklus bisa berbeda.
 
 gD = "Daily Cycle (DCL)"
-dMin    = input.int(40, "Jarak minimal antar DCL (hari)", minval = 5, group = gD)
+dMin    = input.int(40, "Durasi minimum siklus (hari)", minval = 5, group = gD)
 dMax    = input.int(70, "Batas akhir timing band (hari)", minval = 10, group = gD)
-dAvg0   = input.int(60, "Durasi awal untuk proyeksi (hari)", minval = 5, group = gD, tooltip = "Dipakai sampai ada 3 DCL; setelah itu rata-rata 4 siklus terakhir.")
-pivDays = input.int(10, "Lembah = low terendah ± N hari", minval = 2, group = gD)
+dAvg0   = input.int(60, "Durasi awal (sebelum ada data siklus)", minval = 5, group = gD)
+dDrop0  = input.float(8, "Penurunan awal awal-band→DCL (%)", minval = 0, group = gD, tooltip = "Dipakai sampai ada 3 siklus terkonfirmasi.")
+failDays = input.int(20, "Failed cycle: siklus baru paling cepat (hari)", minval = 1, group = gD, tooltip = "Low yang menembus DCL sebelumnya baru dihitung sebagai siklus baru (failed) setelah N hari.")
+dipDays = input.int(10, "Kandidat = low terendah N hari", minval = 2, group = gD)
 maDays  = input.int(10, "MA konfirmasi (hari)", minval = 2, group = gD)
 gW = "Weekly Cycle (WCL)"
-wMin   = input.int(16, "Jarak minimal antar WCL (minggu)", minval = 2, group = gW)
+wMin   = input.int(16, "Durasi minimum siklus (minggu)", minval = 2, group = gW)
 wMax   = input.int(30, "Batas akhir timing band (minggu)", minval = 3, group = gW)
-wAvg0  = input.int(23, "Durasi awal untuk proyeksi (minggu)", minval = 2, group = gW)
+wAvg0  = input.int(23, "Durasi awal (minggu)", minval = 2, group = gW)
+wDrop0 = input.float(12, "Penurunan awal awal-band→WCL (%)", minval = 0, group = gW)
 gS = "Tampilan"
-showProj = input.bool(true, "Proyeksi cycle low berikutnya", group = gS)
-showBand = input.bool(true, "Timing band proyeksi", group = gS)
+showProj = input.bool(true, "Prediksi DCL & WCL berikutnya", group = gS)
 showMA   = input.bool(false, "Tampilkan MA konfirmasi", group = gS)
 colD     = input.color(color.new(#26a69a, 0), "Warna DCL", group = gS)
 colW     = input.color(color.new(#ff9800, 0), "Warna WCL", group = gS)
@@ -49,136 +52,132 @@ dGap = toBars(dMin)
 dEnd = toBars(dMax)
 wGap = toBars(wMin * 7)
 wEnd = toBars(wMax * 7)
-R    = toBars(pivDays)
 ma = ta.sma(close, math.max(2, toBars(maDays)))
 dayHigh = ta.highest(high, toBars(1))
 prevDayHigh = dayHigh[1]
-yRef = ta.lowest(low, toBars(5))
+dipLow = ta.lowest(low, toBars(dipDays))
 plot(showMA ? ma : na, "MA konfirmasi", color = color.new(color.gray, 30))
 
-// simpan riwayat per bar (dipakai di bar terakhir)
-var lows = array.new_float()
-var conf = array.new_int()
-array.push(lows, low)
-array.push(conf, close > prevDayHigh and close > ma ? 1 : 0)
-
-// pilih lembah terdalam lebih dulu dengan jarak minimal "gap" (cand = indeks bar, urut waktu)
-pickDeepest(cand, gap) =>
-    nC = array.size(cand)
-    used = array.new_int(nC, 0)
-    acc = array.new_int()
-    if nC > 0
-        for r = 0 to nC - 1
-            best = -1
-            for k = 0 to nC - 1
-                if array.get(used, k) == 0 and (best < 0 or array.get(lows, array.get(cand, k)) < array.get(lows, array.get(cand, best)))
-                    best := k
-            array.set(used, best, 1)
-            bi = array.get(cand, best)
-            ok = true
-            nA = array.size(acc)
-            if nA > 0
-                for q = 0 to nA - 1
-                    if math.abs(array.get(acc, q) - bi) < gap
-                        ok := false
-                        break
-            if ok
-                array.push(acc, bi)
-    array.sort(acc)
-    acc
-avgGap(arr, def) =>
+fmtP(p) =>
+    p >= 1000 ? str.tostring(math.round(p)) : p >= 1 ? str.tostring(p, "#.##") : str.tostring(p, "#.######")
+med(arr, def) =>
+    array.size(arr) >= 3 ? array.median(arr) : def
+quant(arr, q, def) =>
     n = array.size(arr)
-    k0 = math.max(1, n - 4)
-    s = 0.0
-    if n >= 3
-        for k = k0 to n - 1
-            s += array.get(arr, k) - array.get(arr, k - 1)
-    n >= 3 ? s / (n - k0) : def
+    c = array.copy(arr)
+    array.sort(c)
+    n >= 3 ? array.get(c, math.min(n - 1, math.max(0, math.round(q * (n - 1))))) : def
 
-var drawn = array.new_label()
-var boxes = array.new_box()
-if barstate.islast
-    for l in drawn
-        label.delete(l)
-    for b in boxes
-        box.delete(b)
-    array.clear(drawn)
-    array.clear(boxes)
-    n = array.size(lows)
-    // 1) lembah: low terendah dalam ±R bar (butuh R bar di kanan)
-    piv = array.new_int()
-    if n > 2 * R
-        for i = 0 to n - 1 - R
-            lo = array.get(lows, i)
-            isPiv = true
-            for k = math.max(0, i - R) to i + R
-                if array.get(lows, k) < lo
-                    isPiv := false
-                    break
-            if isPiv and (array.size(piv) == 0 or i - array.get(piv, array.size(piv) - 1) > 1)
-                array.push(piv, i)
-    D = pickDeepest(piv, dGap)
-    W = pickDeepest(D, wGap)
-    // 2) label riwayat
-    off = bar_index - (n - 1)
-    nD = array.size(D)
-    prevLo = 0.0
-    if nD > 0
-        for k = 0 to nD - 1
-            i = array.get(D, k)
-            lo = array.get(lows, i)
-            isW = array.includes(W, i)
-            failed = k > 0 and lo < prevLo
-            array.push(drawn, label.new(i + off, lo, isW ? "WCL" : "DCL", style = label.style_label_up, color = isW ? colW : failed ? colFail : colD, textcolor = color.white, size = isW ? size.normal : size.small, tooltip = isW ? "Weekly Cycle Low" : failed ? "DCL — failed cycle (lebih rendah dari DCL sebelumnya)" : "Daily Cycle Low"))
-            prevLo := lo
-    // 3) siklus yang sedang berjalan
-    if showProj and nD > 0
-        lastD = array.get(D, nD - 1)
-        lastW = array.size(W) > 0 ? array.get(W, array.size(W) - 1) : na
-        avgD = avgGap(D, toBars(dAvg0))
-        avgW = avgGap(W, toBars(wAvg0 * 7))
-        // kandidat: low terendah setelah DCL terakhir + jarak minimal
-        cand = -1
-        if lastD + dGap <= n - 1
-            for i = lastD + dGap to n - 1
-                if cand < 0 or array.get(lows, i) < array.get(lows, cand)
-                    cand := i
-        candOk = false
-        if cand >= 0 and cand < n - 1
-            for i = cand + 1 to n - 1
-                if array.get(conf, i) == 1
-                    candOk := true
-                    break
-        dX = 0
-        dY = 0.0
-        if cand >= 0
-            dX := cand
-            dY := array.get(lows, cand)
-            failedNow = dY < array.get(lows, lastD)
-            array.push(drawn, label.new(cand + off, dY, "DCL", style = label.style_label_up, color = candOk ? (failedNow ? colFail : colD) : color.new(colD, 70), textcolor = color.white, size = size.small, tooltip = candOk ? "DCL terkonfirmasi (siklus berjalan)" : "Proyeksi DCL: kandidat low siklus (belum terkonfirmasi)"))
-        else
-            dX := math.max(lastD + math.round(avgD), n)
-            dY := yRef
-            array.push(drawn, label.new(dX + off, dY, "DCL", style = label.style_label_up, color = color.new(colD, 70), textcolor = color.white, size = size.small, tooltip = "Proyeksi DCL berikutnya (perkiraan waktu)"))
-        if showBand
-            array.push(boxes, box.new(lastD + dGap + off, yRef * 0.93, lastD + dEnd + off, yRef * 0.92, border_color = color.new(colD, 60), border_style = line.style_dashed, bgcolor = color.new(colD, 90), text = "timing band DCL", text_size = size.tiny, text_color = color.new(colD, 20)))
+// ── state (semuanya kausal: hanya memakai candle sampai saat ini) ──
+var int   lastD = na
+var float lastDLow = na
+var int   candBar = na
+var float candLow = na
+var dLens = array.new_float()
+var dDrops = array.new_float()
+var int   dLockBar = na
+var float dLockClose = na
+var int   lastW = na
+var float lastWLow = na
+var int   wCandBar = na
+var float wCandLow = na
+var wLens = array.new_float()
+var wDrops = array.new_float()
+var int   wLockBar = na
+var float wLockClose = na
+
+// harga acuan prediksi dikunci di candle pertama timing band (tidak berubah sampai siklus selesai)
+if not na(lastD) and na(dLockBar) and bar_index - lastD >= dGap
+    dLockBar := bar_index
+    dLockClose := close
+if not na(lastW) and na(wLockBar) and bar_index - lastW >= wGap
+    wLockBar := bar_index
+    wLockClose := close
+
+// kandidat DCL
+inWindow = na(lastD) or bar_index - lastD >= dGap or (bar_index - lastD >= toBars(failDays) and low < lastDLow)
+if inWindow and low <= dipLow and (na(candBar) or low < candLow)
+    candBar := bar_index
+    candLow := low
+
+// konfirmasi DCL → label permanen
+if not na(candBar) and bar_index > candBar and close > prevDayHigh and close > ma
+    failed = not na(lastDLow) and candLow < lastDLow
+    if not na(lastD)
+        array.push(dLens, candBar - lastD)
+    if not na(dLockBar) and candBar >= dLockBar
+        array.push(dDrops, 1 - candLow / dLockClose)
+    label.new(candBar, candLow, "DCL", style = label.style_label_up, color = failed ? colFail : colD, textcolor = color.white, size = size.small, tooltip = (failed ? "DCL — failed cycle" : "Daily Cycle Low") + " · " + fmtP(candLow))
+    // WCL: kandidat sebelumnya terkonfirmasi jika DCL baru lebih tinggi
+    if not na(wCandBar) and candLow > wCandLow
         if not na(lastW)
-            // kandidat WCL: low terendah setelah WCL terakhir + jarak minimal (jika sudah masuk band)
-            wc = -1
-            if lastW + wGap <= n - 1
-                for i = lastW + wGap to n - 1
-                    if wc < 0 or array.get(lows, i) < array.get(lows, wc)
-                        wc := i
-            isLastW = wc >= 0 and array.includes(W, wc)
-            if not isLastW
-                wX = wc >= 0 ? wc : math.max(lastW + math.round(avgW), n)
-                wY = wc >= 0 ? array.get(lows, wc) : yRef
-                // di candle yang sama dengan label DCL → ditumpuk tepat di bawahnya
-                if wX == dX
-                    wY := dY * 0.97
-                array.push(drawn, label.new(wX + off, wY, "WCL", style = label.style_label_up, color = color.new(colW, 70), textcolor = color.white, size = size.normal, tooltip = wc >= 0 ? "Proyeksi WCL: kandidat low weekly cycle (belum terkonfirmasi)" : "Proyeksi WCL berikutnya (perkiraan waktu)"))
-            if showBand
-                array.push(boxes, box.new(lastW + wGap + off, yRef * 0.91, lastW + wEnd + off, yRef * 0.90, border_color = color.new(colW, 60), border_style = line.style_dashed, bgcolor = color.new(colW, 90), text = "timing band WCL", text_size = size.tiny, text_color = color.new(colW, 20)))
+            array.push(wLens, wCandBar - lastW)
+        if not na(wLockBar) and wCandBar >= wLockBar
+            array.push(wDrops, 1 - wCandLow / wLockClose)
+        label.new(wCandBar, wCandLow * 0.97, "WCL", style = label.style_label_up, color = colW, textcolor = color.white, size = size.normal, tooltip = "Weekly Cycle Low · " + fmtP(wCandLow))
+        lastW := wCandBar
+        lastWLow := wCandLow
+        wLockBar := na
+        wLockClose := na
+        wCandBar := na
+        wCandLow := na
+        if bar_index - lastW >= wGap
+            wLockBar := bar_index
+            wLockClose := close
+    // DCL ini jadi kandidat WCL?
+    sinceW = na(lastW) ? 1000000 : candBar - lastW
+    if (sinceW >= wGap or (not na(lastWLow) and candLow < lastWLow)) and (na(wCandBar) or candLow < wCandLow)
+        wCandBar := candBar
+        wCandLow := candLow
+    lastD := candBar
+    lastDLow := candLow
+    candBar := na
+    candLow := na
+    dLockBar := na
+    dLockClose := na
+    if bar_index - lastD >= dGap
+        dLockBar := bar_index
+        dLockClose := close
+
+// ── prediksi harga: close acuan × (1 − median penurunan historis close-acuan → low) ──
+// acuan = close candle pertama timing band (terkunci); sebelum band = close terakhir (sementara)
+mDrop = med(dDrops, dDrop0 / 100)
+lDrop = quant(dDrops, 0.25, dDrop0 / 100 * 0.5)
+hDrop = quant(dDrops, 0.75, dDrop0 / 100 * 1.5)
+refD = na(dLockClose) ? close : dLockClose
+predD = refD * (1 - mDrop)
+mDropW = med(wDrops, wDrop0 / 100)
+lDropW = quant(wDrops, 0.25, wDrop0 / 100 * 0.5)
+hDropW = quant(wDrops, 0.75, wDrop0 / 100 * 1.5)
+refW = na(wLockClose) ? close : wLockClose
+predW = refW * (1 - mDropW)
+plot(predD, "Prediksi harga DCL", display = display.none)
+plot(predW, "Prediksi harga WCL", display = display.none)
+
+var label pD = na
+var label pW = na
+var box   bD = na
+var box   bW = na
+if barstate.islast and showProj and not na(lastD)
+    label.delete(pD)
+    label.delete(pW)
+    box.delete(bD)
+    box.delete(bW)
+    lockedD = not na(dLockClose)
+    lenD = med(dLens, toBars(dAvg0))
+    xD = math.max(lastD + math.round(lenD), bar_index + 1)
+    zLoD = refD * (1 - hDrop)
+    zHiD = refD * (1 - lDrop)
+    bD := box.new(lastD + dGap, zHiD, math.max(lastD + dEnd, xD + 1), zLoD, border_color = color.new(colD, 50), border_style = line.style_dashed, bgcolor = color.new(colD, 92), text = "zona DCL " + fmtP(zLoD) + " – " + fmtP(zHiD), text_size = size.tiny, text_color = color.new(colD, 10), text_valign = text.align_bottom)
+    pD := label.new(xD, predD, "DCL " + fmtP(predD) + (lockedD ? "" : " (sementara)"), style = label.style_label_up, color = color.new(colD, lockedD ? 55 : 75), textcolor = color.white, size = size.small, tooltip = "Prediksi DCL berikutnya: " + fmtP(predD) + " (zona 50%: " + fmtP(zLoD) + " – " + fmtP(zHiD) + "), sekitar hari ke-" + str.tostring(math.round(lenD / bpd)) + " siklus. " + (lockedD ? "Terkunci sejak awal timing band." : "Sementara: mengikuti close terakhir sampai timing band dimulai."))
+    if not na(lastW)
+        lockedW = not na(wLockClose)
+        lenW = med(wLens, toBars(wAvg0 * 7))
+        xW = math.max(lastW + math.round(lenW), bar_index + 1)
+        zLoW = refW * (1 - hDropW)
+        zHiW = refW * (1 - lDropW)
+        bW := box.new(lastW + wGap, zHiW, math.max(lastW + wEnd, xW + 1), zLoW, border_color = color.new(colW, 50), border_style = line.style_dashed, bgcolor = color.new(colW, 95), text = "zona WCL " + fmtP(zLoW) + " – " + fmtP(zHiW), text_size = size.tiny, text_color = color.new(colW, 10), text_valign = text.align_bottom)
+        pW := label.new(xW, predW * (xW == xD and math.abs(predW - predD) < predD * 0.03 ? 0.97 : 1), "WCL " + fmtP(predW) + (lockedW ? "" : " (sementara)"), style = label.style_label_up, color = color.new(colW, lockedW ? 55 : 75), textcolor = color.white, size = size.normal, tooltip = "Prediksi WCL berikutnya: " + fmtP(predW) + " (zona 50%: " + fmtP(zLoW) + " – " + fmtP(zHiW) + "), sekitar minggu ke-" + str.tostring(math.round(lenW / bpd / 7)) + " siklus. " + (lockedW ? "Terkunci sejak awal timing band." : "Sementara: mengikuti close terakhir sampai timing band dimulai."))
 `;
 
   const api = { indicator };
