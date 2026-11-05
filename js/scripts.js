@@ -504,6 +504,13 @@ barcolor(naikBeruntun >= 4 ? color.lime : na)
       { key: 'klctz-strat', name: 'KLCTZ Strategy [PhenLabs]', enabled: false, code: KLC.strategy },
     );
   }
+  const LAI = root.LunaAI || (typeof require !== 'undefined' ? require('./scripts-ai.js') : null);
+  if (LAI) {
+    EXAMPLES.push(
+      { key: 'luna-ai-ind', name: 'Luna AI Signal 1H', enabled: false, code: LAI.indicator },
+      { key: 'luna-ai-strat', name: 'Luna AI Strategy 1H', enabled: false, code: LAI.strategy },
+    );
+  }
   // kode lama contoh bawaan: script tersimpan yang masih persis sama (belum diedit pengguna)
   // diperbarui otomatis ke versi baru
   const LEGACY = {

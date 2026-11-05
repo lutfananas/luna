@@ -500,6 +500,31 @@ console.log('KLCTZ: preset Optimasi Luna 4H + filter ML');
   ok(lbl.length > 0 && lbl.every((t) => /BREAKOUT/.test(t) && /ML \d+%/.test(t)), 'label sinyal: hanya BREAKOUT + peluang ML');
 }
 
+console.log('Luna AI Signal 1H (model ML)');
+{
+  const AI = require('../js/scripts-ai.js');
+  const wb = [];
+  let p = 10, seed = 5;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 2600; i++) {
+    const o = p; let h = p, l = p;
+    for (let k = 0; k < 6; k++) { p *= 1 + (rnd() - 0.5) * 0.008; h = Math.max(h, p); l = Math.min(l, p); }
+    wb.push({ time: Date.UTC(2025, 0, 6) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 100 + rnd() * 900 });
+  }
+  ok(AI.MODEL.trees.length === 80 && AI.MODEL.th1 > AI.MODEL.th5, 'model 80 pohon + 2 ambang');
+  const pr = '\nplot(newDir, "zDir")\nplot(pScore, "zSc")\n';
+  const ri = Pine.run(Pine.compile(AI.indicator + pr), wb, { timeframe: '1h', symbol: 'TEST', inputs: { 'Tingkat seleksi': 'Normal (±5% skor teratas)' } });
+  ok(!ri.error && ri.drawings.table.length === 1, 'indikator jalan + panel ' + (ri.error || ''));
+  const dir = ri.plots.find((x) => x.title === 'zDir').values, sc = ri.plots.find((x) => x.title === 'zSc').values;
+  const sig = dir.map((v, i) => [v, i]).filter(([v]) => v);
+  ok(sig.length > 0 && sig.every(([, i]) => i >= 800 && sc[i] >= AI.MODEL.th5 - 1e-12), `sinyal hanya setelah pemanasan & skor ≥ ambang (${sig.length} sinyal)`);
+  const rc = Pine.run(Pine.compile(AI.indicator + pr), wb.slice(0, 2000), { timeframe: '1h', symbol: 'TEST' });
+  ok(rc.plots.find((x) => x.title === 'zDir').values.every((v, k) => v === dir[k]), 'tanpa repaint: sinyal sama saat data bertambah');
+  const rs = Pine.run(Pine.compile(AI.strategy + pr), wb, { timeframe: '1h', symbol: 'TEST' });
+  const pos = new Set(rs.strategy.trades.map((t) => t.entryBar)).size + (rs.strategy.openTrades.length ? 1 : 0);
+  ok(!rs.error && Math.abs(pos - sig.length) <= 1, `strategy: posisi broker = sinyal (${pos} vs ${sig.length})`);
+}
+
 console.log('Scanner sinyal');
 {
   const SC = require('../js/scanner.js');
