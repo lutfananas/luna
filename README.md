@@ -1,7 +1,7 @@
 # 🌙 Luna — Dashboard Trading Crypto Pribadi
 
 > **Versi terbaru: 5 November 2026** — unduh **[luna-dashboard.zip](luna-dashboard.zip)** (klik file → tombol *Download raw file*), ekstrak ke folder baru, buka `index.html`, lalu tekan **Ctrl+Shift+R**.
-> Isi terbaru: **alat gambar** (Fibonacci, range harga & %, garis, kotak, posisi long/short), indikator **Cycle Low (DCL / WCL)** tanpa repaint + prediksi harga **(selalu dihitung dari data harian — angkanya sama di 15m/1H/4H/1D)**, status siklus (**✕ DCL ditembus**, **⚠ translasi kiri**) & panel **siklus 4 tahunan BTC (halving)**, preset ENAUSDT, penanda news (termasuk **hack Binance 29 Okt 2026**), tab **📰 Siklus & News** + tambah news sendiri, scanner sinyal, pair Binance Futures. Script bawaan yang belum Anda edit diperbarui otomatis saat aplikasi dibuka.
+> Isi terbaru: indikator **Key Level Confluence & Target Zones [PhenLabs]** + versi **strategy**, **alat gambar** (Fibonacci, range harga & %, garis, kotak, posisi long/short), indikator **Cycle Low (DCL / WCL)** tanpa repaint + prediksi harga **(selalu dihitung dari data harian — angkanya sama di 15m/1H/4H/1D)**, status siklus (**✕ DCL ditembus**, **⚠ translasi kiri**) & panel **siklus 4 tahunan BTC (halving)**, preset ENAUSDT, penanda news (termasuk **hack Binance 29 Okt 2026**), tab **📰 Siklus & News** + tambah news sendiri, scanner sinyal, pair Binance Futures. Script bawaan yang belum Anda edit diperbarui otomatis saat aplikasi dibuka.
 
 
 Dashboard trading pribadi ala TradingView yang berjalan sepenuhnya di browser Anda:
@@ -16,10 +16,11 @@ Dashboard trading pribadi ala TradingView yang berjalan sepenuhnya di browser An
 - **SATTAM | CRT+TBS** — indikator Candle Range Theory + Turtle Body Soup (HTF otomatis, key level OB/FVG/OHP/OLP, 3 entry model, daily bias, kill zone, Donchian 2H) beserta versi strategy-nya. Lihat [docs/CRT-TBS.md](docs/CRT-TBS.md).
 - **MyTT Trend Pullback** + indikator **MyTT KDJ + DMI** — rumus BBI, KDJ, DMI (versi 通达信) dan TAQ dari [MyTT](https://github.com/mpquant/MyTT), ditulis ulang di Pine. Ikut tren (BBI naik, PDI > MDI, ADX ≥ 20), masuk saat KDJ golden cross setelah J < 20; SL di luar swing, TP1–TP3 di zona pivot/TAQ.
 - **EMA Cross Strategy** — entry limit di zona EMA, SL di luar swing, TP1–TP3 di zona resistance/support.
+- **Key Level Confluence & Target Zones [PhenLabs]** + **KLCTZ Strategy** — port dari script PhenLabs (MPL-2.0). Level PDH/PDL/PDC, pivot harian & mingguan (Traditional/Fibonacci/Camarilla), swing high/low dan angka bulat digabung menjadi **zona confluence** (minimal satu level struktur + satu level rumus). Sinyal **HOLD** (penolakan zona) atau **BREAKOUT** (close tegas menembus zona), rencana Entry/SL/TP1–TP3 (50/30/20, SL ke BE setelah TP1, time exit 60 bar), turnamen 4 profil (Balanced/Strict/Scalp/Swing) + **Auto** (profil dengan rata-rata R terbaik). Versi strategy mengeksekusi rencana profil yang dipilih di open bar berikutnya. Hasil uji 16 koin: tanpa biaya ±0R per trade; setelah komisi 0,1% semua profil negatif di periode verifikasi (Des 2025 → Nov 2026) — pakai sebagai **peta level**, bukan sinyal otomatis.
 - **Cycle Low (DCL / WCL)** — teori siklus Hurst / Bob Loukas, **tanpa repaint**: label **DCL** (Daily Cycle Low) dan **WCL** (Weekly Cycle Low) ditulis saat terkonfirmasi dan tidak pernah berubah; failed cycle merah. **Prediksi harga & waktu** DCL/WCL berikutnya: close di awal timing band × (1 − median penurunan historis), terkunci sejak awal band, dengan zona harga 50% (kuartil 25–75%). Preset **ENAUSDT** hasil tuning (siklus minimum 35 hari). Penanda **News** di atas candle: peristiwa besar (perang, hack, krisis, halving, pemilu), opsional FOMC & unlock ENA, termasuk jadwal yang akan datang. Tab **📰 Siklus & News** di panel bawah: tabel tiap siklus (tanggal & harga low, durasi, DCL/WCL/failed, news selama siklus) dengan baris siklus berjalan berisi prediksi, timing band, dan daftar **berjaga-jaga** (jadwal mendatang, guncangan baru).
 - **Pair Binance Futures** (mis. **XAUUSDT** emas, **NVDAUSDT**, **SANDISKUSDT**): pair yang tidak ada di spot otomatis diambil dari Binance Futures USDⓈ-M (candle, harga realtime, live), diberi label PERP. Ketiganya sudah ada di Favorit.
 - **Alat gambar seperti TradingView** (toolbar kiri chart): garis tren, garis horizontal, **Fibonacci retracement**, **range harga & tanggal** (Δ harga, Δ %, jumlah candle, durasi), kotak (tinggi %), **posisi long/short** (entry/SL/TP, R:R), magnet OHLC. Disimpan per koin, tetap di tempatnya saat ganti timeframe.
-- **📡 Scanner sinyal** (tab Sinyal di kanan): menjalankan EMA Cross zona atau MyTT di koin Favorit + Top 30/50/100 pada 15m/1H/4H, hanya memakai candle yang sudah close. Setiap titik entry baru tampil sebagai kartu (Entry, SL, TP1–TP3, R) dengan notifikasi browser + bunyi; mode **Online** memindai otomatis tiap candle close. Klik kartu untuk membuka chart-nya.
+- **📡 Scanner sinyal** (tab Sinyal di kanan): menjalankan EMA Cross zona, MyTT atau KLCTZ di koin Favorit + Top 30/50/100 pada 15m/1H/4H, hanya memakai candle yang sudah close. Setiap titik entry baru tampil sebagai kartu (Entry, SL, TP1–TP3, R) dengan notifikasi browser + bunyi; mode **Online** memindai otomatis tiap candle close. Klik kartu untuk membuka chart-nya.
 - Alat uji di folder `tools/`: `tune-crt.js` (grid + verifikasi out-of-sample) dan `robust-crt.js` (banyak koin + walk-forward).
 - Semua script & pengaturan tersimpan di browser (localStorage). Bisa **ekspor/impor** ke file JSON.
 
@@ -102,7 +103,8 @@ js/pine-ext.js      timeframe/HTF, array, objek gambar (box/line/label/table)
 js/draw-layer.js    renderer objek gambar di chart + tabel
 js/scripts-crt.js   SATTAM CRT+TBS (indikator & strategy)
 js/scripts-mytt.js  MyTT KDJ + DMI (indikator) & MyTT Trend Pullback (strategy)
-js/scanner.js       scanner sinyal multi-koin (EMA Cross zona / MyTT)
+js/scanner.js       scanner sinyal multi-koin (EMA Cross zona / MyTT / KLCTZ)
+js/scripts-klctz.js Key Level Confluence [PhenLabs] (indikator & strategy, MPL-2.0)
 js/user-draw.js     alat gambar manual (fibo, range harga & %, garis, kotak, posisi)
 js/scripts-cycle.js indikator Cycle Low (DCL / WCL)
 js/ta.js            library indikator (ta.*)

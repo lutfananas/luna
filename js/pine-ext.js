@@ -193,6 +193,7 @@
       slice: (a, f, t) => a.slice(f, t),
       copy: (a) => a.slice(),
       reverse: (a) => { a.reverse(); },
+      sort_indices: (a, order) => a.map((_, i) => i).sort((i, j) => { const x = a[i], y = a[j]; const c = x > y ? 1 : x < y ? -1 : i - j; return order === 'descending' ? (x === y ? i - j : -c) : c; }),
       sort: (a, order) => { a.sort((x, y) => (order === 'descending' ? (y > x ? 1 : y < x ? -1 : 0) : (x > y ? 1 : x < y ? -1 : 0))); },
       concat: (a, b) => { a.push(...b); return a; },
       join: (a, sep) => a.join(sep === undefined ? ',' : sep),

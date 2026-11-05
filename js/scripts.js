@@ -497,6 +497,13 @@ barcolor(naikBeruntun >= 4 ? color.lime : na)
       { key: 'mytt-strat', name: 'MyTT Trend Pullback', enabled: false, code: MYTT.strategy },
     );
   }
+  const KLC = root.LunaKLCTZ || (typeof require !== 'undefined' ? require('./scripts-klctz.js') : null);
+  if (KLC) {
+    EXAMPLES.push(
+      { key: 'klctz-ind', name: 'Key Level Confluence [PhenLabs]', enabled: false, code: KLC.indicator },
+      { key: 'klctz-strat', name: 'KLCTZ Strategy [PhenLabs]', enabled: false, code: KLC.strategy },
+    );
+  }
   // kode lama contoh bawaan: script tersimpan yang masih persis sama (belum diedit pengguna)
   // diperbarui otomatis ke versi baru
   const LEGACY = {
