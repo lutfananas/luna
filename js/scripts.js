@@ -888,7 +888,7 @@ if ta.crossunder(fast, slow)
     "klctz-strat": [
       "f1ae1c01"
     ]
-  };;
+  };
   const hashCode = (code) => {
     const s = String(code).trim();
     let h = 0x811c9dc5;
