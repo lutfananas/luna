@@ -123,6 +123,11 @@
   const volume = chart.addSeries(LW.HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false }, 0);
   chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
   const candleMarkerApi = LW.createSeriesMarkers(candle, []);
+  // alat gambar manual (fibo, range harga & %, garis, kotak, posisi) — disimpan per koin
+  const userDraw = window.LunaUserDraw ? window.LunaUserDraw.attach({
+    chart, series: candle, getBars: () => S.bars, store, symbol: () => settings.symbol,
+    isBusy: () => S.replay.picking, status, host: document.querySelector('.chart-wrap'), chartEl: $('chart'),
+  }) : null;
 
   const view = {
     series: [], // {api, pts, script, title, color}
