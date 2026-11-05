@@ -429,6 +429,54 @@ console.log('Cycle Low (DCL / WCL) — tanpa repaint');
   ok(rf.length > 10 && rf.every((l) => l.props.x >= cb.length) && rf.some((l) => /akan datang/.test(l.props.tooltip)), `FOMC (dinyalakan) tampil sebagai jadwal mendatang (${rf.length} penanda)`);
 }
 
+console.log('KLCTZ [PhenLabs]: zona confluence, rencana & strategy');
+{
+  const K = require('../js/scripts-klctz.js');
+  ok(JSON.stringify(globalThis.LunaPineExt.makeArray().sort_indices([3, 1, 2, 1], 'ascending')) === '[1,3,2,0]', 'array.sort_indices ascending (stabil)');
+  const wb = [];
+  let p = 20, seed = 21;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 2500; i++) {
+    const o = p; let h = p, l = p;
+    for (let k = 0; k < 12; k++) { p *= 1 + (rnd() - 0.5) * 0.006; h = Math.max(h, p); l = Math.min(l, p); }
+    wb.push({ time: Date.UTC(2025, 0, 6) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 100 + rnd() * 900 });
+  }
+  const probe = '\nplot(pdh, "zPDH")\nplot(pdl, "zPDL")\nplot(pdc, "zPDC")\nplot(dP, "zP")\nplot(dR1, "zR1")\nplot(dOpenDir, "zDir")\nplot(dE, "zE")\nplot(dS, "zS")\nplot(dT1, "zT1")\nplot(dT2, "zT2")\nplot(dT3, "zT3")\nplot(lg(dispIdx, F_TR), "zTR")\nplot(dlActive ? 1 : 0, "zAct")\n';
+  const ri = Pine.run(Pine.compile(K.indicator + probe), wb, { timeframe: '1h', symbol: 'TEST' });
+  ok(!ri.error && ri.drawings.table.length === 1, 'indikator jalan + dashboard ' + (ri.error || ''));
+  const P = (r, n) => r.plots.find((x) => x.title === n).values;
+  // pivot harian dari candle harian SEBELUMNYA (tanpa repaint)
+  const i = 1000, day = Math.floor(wb[i].time / 864e5) - 1;
+  const prev = wb.filter((b) => Math.floor(b.time / 864e5) === day);
+  const H = Math.max(...prev.map((b) => b.high)), Lo = Math.min(...prev.map((b) => b.low)), C = prev[prev.length - 1].close, piv = (H + Lo + C) / 3;
+  ok(Math.abs(P(ri, 'zPDH')[i] - H) < 1e-9 && Math.abs(P(ri, 'zPDL')[i] - Lo) < 1e-9 && Math.abs(P(ri, 'zPDC')[i] - C) < 1e-9, 'PDH/PDL/PDC = candle harian kemarin');
+  ok(Math.abs(P(ri, 'zP')[i] - piv) < 1e-9 && Math.abs(P(ri, 'zR1')[i] - (2 * piv - Lo)) < 1e-9, 'pivot Traditional P & R1 sesuai rumus');
+  const dir = P(ri, 'zDir');
+  let n = 0, bad = 0;
+  for (let k = 0; k < wb.length; k++) {
+    if (!dir[k]) continue;
+    n++;
+    const d = dir[k], v = [P(ri, 'zS')[k], P(ri, 'zE')[k], P(ri, 'zT1')[k], P(ri, 'zT2')[k], P(ri, 'zT3')[k]].map((x) => x * d);
+    if (!(v[0] < v[1] && v[1] < v[2] && v[2] < v[3] && v[3] <= v[4] + 1e-12)) bad++;
+  }
+  ok(n > 10 && bad === 0, `rencana: SL < Entry < TP1 < TP2 ≤ TP3 (${n} sinyal, ${bad} salah)`);
+  // tanpa repaint: sinyal di data terpotong sama dengan data penuh
+  const cut = 1800;
+  const rc = Pine.run(Pine.compile(K.indicator + probe), wb.slice(0, cut), { timeframe: '1h', symbol: 'TEST' });
+  ok(P(rc, 'zDir').every((v, k) => v === dir[k]), 'sinyal tidak berubah saat data bertambah (tanpa repaint)');
+  // strategy: order mengikuti ledger profil yang ditampilkan
+  const rs = Pine.run(Pine.compile(K.strategy + probe), wb, { timeframe: '1h', symbol: 'TEST' });
+  ok(!rs.error, 'strategy jalan ' + (rs.error || ''));
+  const posN = new Set(rs.strategy.trades.map((t) => t.entryBar)).size + (rs.strategy.openTrades.length ? 1 : 0);
+  const led = P(rs, 'zTR')[wb.length - 1] + P(rs, 'zAct')[wb.length - 1];
+  ok(posN > 10 && Math.abs(posN - led) <= 1, `jumlah posisi broker = rencana ledger (${posN} vs ${led})`);
+  const ids = new Set(rs.strategy.trades.map((t) => t.exitId));
+  ok(ids.has('TP1') && ids.has('TP2') && ids.has('TP3'), 'scale-out TP1 / TP2 / TP3');
+  const sig = [];
+  for (let m = 1500; m < 2500; m += 23) { const s = require('../js/scanner.js').evaluate('klctz', K.strategy, wb.slice(0, m), { tf: '1h', symbol: 'TEST', maxAge: 5 }); if (s) sig.push(s); }
+  ok(sig.length > 0 && sig.every((s) => s.rr1 > 0 && s.rr2 > s.rr1 && s.rr3 >= s.rr2), `scanner KLCTZ: ${sig.length} sinyal dengan R:R berurutan`);
+}
+
 console.log('Scanner sinyal');
 {
   const SC = require('../js/scanner.js');

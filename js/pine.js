@@ -1064,7 +1064,7 @@
       },
       strategy: strategyNS,
       plot: (site, series, title, color, linewidth, style, trackprice, histbase, offset, join, editable, showLast, display, format, precision, forceOverlay) => {
-        const p = plotObj(site, 'plot', title, { style: style || 'line', linewidth: numOr(linewidth, 1), color0: color, hidden: display === 'none', forceOverlay: !!forceOverlay, histbase: numOr(histbase, 0) });
+        const p = plotObj(site, 'plot', title, { style: style || 'line', linewidth: numOr(linewidth, 1), color0: color, hidden: display === 'none' || display === 'data_window', forceOverlay: !!forceOverlay, histbase: numOr(histbase, 0) });
         const j = i + (offset || 0);
         if (j >= 0 && j < n) {
           p.values[j] = typeof series === 'boolean' ? +series : isNa(series) ? NaN : series;
@@ -1075,7 +1075,7 @@
       plotshape: (site, series, title, style, location, color, offset, text, textcolor, editable, size, showLast, display, format, precision, forceOverlay) => {
         let s = shapeMap.get(site);
         if (!s) {
-          s = { id: 's' + site, title: title || 'Shape', style: style || 'xcross', location: location || 'abovebar', size: size || 'auto', hits: [], hidden: display === 'none', forceOverlay: !!forceOverlay };
+          s = { id: 's' + site, title: title || 'Shape', style: style || 'xcross', location: location || 'abovebar', size: size || 'auto', hits: [], hidden: display === 'none' || display === 'data_window', forceOverlay: !!forceOverlay };
           shapeMap.set(site, s);
           result.shapes.push(s);
         }
@@ -1093,7 +1093,7 @@
       plotcandle: noop, plotbar: noop,
       hline: (site, price, title, color, linestyle, linewidth, editable, display) => {
         if (!hlineMap.has(site)) {
-          const h = { id: 'h' + site, price, title: title || '', color: color || COLORS.gray, linestyle: linestyle || 'dashed', linewidth: numOr(linewidth, 1), hidden: display === 'none' };
+          const h = { id: 'h' + site, price, title: title || '', color: color || COLORS.gray, linestyle: linestyle || 'dashed', linewidth: numOr(linewidth, 1), hidden: display === 'none' || display === 'data_window' };
           hlineMap.set(site, h);
           result.hlines.push(h);
         }

@@ -70,6 +70,32 @@
         return null;
       },
     },
+    klctz: {
+      label: 'KLCTZ Confluence [PhenLabs]',
+      scriptName: 'KLCTZ Strategy [PhenLabs]',
+      exampleKey: 'klctz-strat',
+      probe: [
+        'plot(dlActive ? dlDir : 0, "__dir", display = display.none)',
+        'plot(lg(dispIdx, F_BAR), "__bar", display = display.none)',
+        'plot(lg(dispIdx, F_E), "__e", display = display.none)',
+        'plot(lg(dispIdx, F_E) - dlDir * lg(dispIdx, F_RISK), "__sl", display = display.none)',
+        'plot(lg(dispIdx, F_T1), "__t1", display = display.none)',
+        'plot(lg(dispIdx, F_T2), "__t2", display = display.none)',
+        'plot(lg(dispIdx, F_T3), "__t3", display = display.none)',
+      ],
+      // rencana dibuat di close bar sinyal (order market di open berikutnya); tampil selama rencana masih aktif
+      read(P, bars, maxAge) {
+        const L = bars.length - 1;
+        const dir = P.__dir[L];
+        if (!dir) return null;
+        const sb = Math.max(0, Math.min(L, P.__bar[L]));
+        if (L - sb > maxAge) return null;
+        return {
+          dir, status: L === sb ? 'signal' : 'filled', signalTime: bars[sb].time, age: L - sb,
+          entry: P.__e[L], sl: P.__sl[L], tp1: P.__t1[L], tp2: P.__t2[L], tp3: P.__t3[L],
+        };
+      },
+    },
   };
 
   // buang candle terakhir jika belum close

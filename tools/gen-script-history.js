@@ -6,12 +6,12 @@ const os = require('os');
 const ROOT = path.join(__dirname, '..');
 const S = fs.mkdtempSync(path.join(os.tmpdir(), 'luna-hist-'));
 const hash = (s) => { s = String(s).trim(); let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, '0'); };
-const commits = execSync('git log --format=%H -- js/scripts.js js/scripts-crt.js js/scripts-mytt.js js/scripts-cycle.js', { cwd: ROOT }).toString().trim().split('\n');
+const commits = execSync('git log --format=%H -- js/scripts.js js/scripts-crt.js js/scripts-mytt.js js/scripts-cycle.js js/scripts-klctz.js', { cwd: ROOT }).toString().trim().split('\n');
 const out = {};
 for (const c of commits) {
   const dir = path.join(S, 'hist', c.slice(0, 8));
   fs.mkdirSync(dir, { recursive: true });
-  for (const f of ['scripts.js', 'scripts-crt.js', 'scripts-mytt.js', 'scripts-cycle.js']) {
+  for (const f of ['scripts.js', 'scripts-crt.js', 'scripts-mytt.js', 'scripts-cycle.js', 'scripts-klctz.js']) {
     try { fs.writeFileSync(path.join(dir, f), execSync(`git show ${c}:js/${f}`, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] })); } catch (e) { /* file belum ada */ }
   }
   for (const k of Object.keys(globalThis)) if (/^Luna/.test(k)) delete globalThis[k];
