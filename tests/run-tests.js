@@ -477,6 +477,29 @@ console.log('KLCTZ [PhenLabs]: zona confluence, rencana & strategy');
   ok(sig.length > 0 && sig.every((s) => s.rr1 > 0 && s.rr2 > s.rr1 && s.rr3 >= s.rr2), `scanner KLCTZ: ${sig.length} sinyal dengan R:R berurutan`);
 }
 
+console.log('KLCTZ: preset Optimasi Luna 4H + filter ML');
+{
+  const K = require('../js/scripts-klctz.js');
+  const wb = [];
+  let p = 30, seed = 77;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 4000; i++) {
+    const o = p; let h = p, l = p;
+    for (let k = 0; k < 12; k++) { p *= 1 + (rnd() - 0.5) * 0.01; h = Math.max(h, p); l = Math.min(l, p); }
+    wb.push({ time: Date.UTC(2023, 0, 2) + i * 4 * 3600e3, open: o, high: h, low: l, close: p, volume: 100 + rnd() * 900 });
+  }
+  const pr = '\nplot(dOpenDir, "zDir")\nplot(dProb, "zProb")\n';
+  const run = (inputs) => Pine.run(Pine.compile(K.strategy + pr), wb, { timeframe: '4h', symbol: 'TEST', inputs });
+  const on = run({}), off = run({ 'Filter ML': 'Mati' });
+  ok(!on.error && !off.error, 'strategy default (Optimasi 4H + ML) jalan ' + (on.error || off.error || ''));
+  const n = (r) => r.plots.find((x) => x.title === 'zDir').values.filter((v) => v).length;
+  ok(n(off) > n(on) && n(on) > 0, `filter ML menyaring setup (${n(off)} → ${n(on)})`);
+  const pv = on.plots.find((x) => x.title === 'zProb').values.filter((v) => !Number.isNaN(v));
+  ok(pv.length === n(on) && pv.every((v) => v >= 1 / (1 + Math.exp(-(-0.4841))) - 1e-3 && v < 1), `peluang ML tiap setup ≥ ambang (${pv.length} setup)`);
+  const lbl = on.drawings.label.map((o) => String(o.props.text)).filter((t) => /^(BUY|SELL)/.test(t));
+  ok(lbl.length > 0 && lbl.every((t) => /BREAKOUT/.test(t) && /ML \d+%/.test(t)), 'label sinyal: hanya BREAKOUT + peluang ML');
+}
+
 console.log('Scanner sinyal');
 {
   const SC = require('../js/scanner.js');

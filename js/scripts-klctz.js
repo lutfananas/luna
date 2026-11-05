@@ -17,12 +17,19 @@
 // © PhenLabs — Key Level Confluence & Target Zones
 // Diadaptasi untuk Luna (enum → input.string, UDT → array, + versi strategy). Tetap MPL-2.0.`;
 
-  const COMMON = String.raw`
+  // Model ML (regresi logistik) — dilatih di 16 koin 4H, Mar 2023 – Okt 2025, setelan "Optimasi Luna 4H".
+  // Target: setup untung setelah komisi 0,1% (R > 0). Tes di Nov 2025 – Nov 2026 (tidak dipakai saat latih).
+  const ML = {"feats": ["dir", "hold", "cnt", "score", "wk", "zoneH", "riskAtr", "act", "body", "wick", "trend200", "trend50", "slope50", "rsi", "atrPct", "room", "dayPos", "wkPos"], "m": [0.1001926782273603, 0, 4.594990366088632, 0.8462389210019188, 0.7314065510597303, 1.0733409876875752, 2.952481783197311, 1.9378170701639221, 0.7418849743700201, 0.09908476091528415, 1.5091452325712862, 1.5275330970886256, 0.10945851031300355, 0.22508147675663523, 2.7276512026075506, 2.9265245948153815, 0.7837888252492232, 0.2804761519951947], "sd": [0.9949680533713803, 1, 1.2069699436994608, 0.15617537677798357, 0.44322794150035905, 0.36870682234335045, 0.13418699727823266, 0.8999601483163124, 0.11063358037064985, 0.08883238973464491, 3.774097933622243, 1.7956340360924352, 0.635198910936075, 0.20539658187336549, 1.294992382351651, 2.289264935067992, 0.6902291252740121, 0.5001369784059164], "w": [-0.012245994005401072, 0, 0.008770712625394066, -0.049821336472517436, 0.061950599721236475, -0.015622451321658305, 0.02256773550334982, -0.0386579407325751, 0.03853356041417783, -0.007955310458743911, 0.03685074939390194, 0.04353396528994687, -0.12813447661592994, 0.04907691591377339, -0.10278353160696492, -0.019311195391709834, -0.03200991135235301, 0.040046964959704064], "b": -0.5608222034848721, "th": -0.4840651687319331};
+  const ML_EXPR = ML.feats.map((f, j) => ML.w[j] === 0 ? '' : ` + ${ML.w[j].toFixed(6)} * (x_${f} - ${ML.m[j].toFixed(6)}) / ${ML.sd[j].toFixed(6)}`).join('');
+
+  const common = (presetDef, mlDef) => String.raw`
 // ═════════════ INPUTS ═════════════
 G1 = "Signals"
 G2 = "Confluence Zones"
 G3 = "Trade Plan"
 G4 = "Display"
+iPreset  = input.string("${presetDef}", "Preset", options = ["Asli (PhenLabs)", "Optimasi Luna 4H"], group = G1, tooltip = "Optimasi Luna 4H = hasil optimasi 16 koin (Mar 2023 – Okt 2025): profil Swing, hanya Breakout, zona tol 0.75 / min 3 sumber / swing 20, tanpa angka bulat, stop buffer 1.0, TP 1.5/3/4.5 (×1.5 Swing), time exit 120 bar. Saat aktif, setelan di bawah yang sama diabaikan.")
+iML      = input.string("${mlDef}", "Filter ML", options = ["Mati", "Ambil ±30% skor terbaik"], group = G1, tooltip = "Model regresi logistik memberi peluang berhasil tiap setup (dilatih untuk preset Optimasi Luna 4H). Filter hanya mengambil setup dengan peluang ≥ ambang (±30% setup terbaik di data latih).")
 iMode    = input.string("Both (Hold + Breakout)", "Trade Mode", options = ["Both (Hold + Breakout)", "Hold Reversals Only", "Confirmed Breakouts Only"], group = G1, tooltip = "HOLD = harga menolak zona confluence lalu close keluar zona. BREAKOUT = harga close tegas menembus zona.")
 iProf    = input.string("Auto (Best EV)", "Profile", options = ["Auto (Best EV)", "Balanced", "Strict 3x+ Stack", "Scalp Fast", "Swing Wide"], group = G1, tooltip = "Auto memakai profil dengan rata-rata R terbaik sejauh ini (minimal 3 trade selesai). Auto punya catatan live sendiri.")
 iSide    = input.string("Long & Short", "Arah trade", options = ["Long & Short", "Long saja", "Short saja"], group = G1, tooltip = "Tambahan Luna. Default = perilaku asli (dua arah).")
@@ -44,6 +51,20 @@ iTbl     = input.string("Small", "Table Size", options = ["Tiny", "Small", "Norm
 bullC    = input.color(#00E5A8, "Bull", group = G4)
 bearC    = input.color(#FF4D6D, "Bear", group = G4)
 zoneC    = input.color(#F5C542, "Zone", group = G4)
+
+isOpt    = iPreset == "Optimasi Luna 4H"
+mlOn     = iML != "Mati"
+cTol     = isOpt ? 0.75 : iTol
+cMinSrc  = isOpt ? 3 : iMinSrc
+cSwing   = isOpt ? 20 : iSwing
+cRound   = isOpt ? false : iRound
+cPiv     = isOpt ? "Traditional" : iPiv
+cSlBuf   = isOpt ? 1.0 : iSlBuf
+cR1      = isOpt ? 1.5 : iR1
+cR2      = isOpt ? 3.0 : iR2
+cR3      = isOpt ? 4.5 : iR3
+cMagnet  = isOpt ? true : iMagnet
+cMaxBars = isOpt ? 120 : iMaxBars
 
 // ═════════════ HELPERS ═════════════
 f_piv(pt, h, l, c) =>
@@ -142,12 +163,12 @@ useW = timeframe.in_seconds() <= 604800
 [pdh, pdl, pdc] = request.security(syminfo.tickerid, "D", [high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
 [pwh, pwl, pwc] = request.security(syminfo.tickerid, "W", [high[1], low[1], close[1]], lookahead = barmerge.lookahead_on)
 
-pt = iPiv == "Traditional" ? 0 : iPiv == "Fibonacci" ? 1 : 2
+pt = cPiv == "Traditional" ? 0 : cPiv == "Fibonacci" ? 1 : 2
 [dP, dR1, dR2, dR3, dS1, dS2, dS3] = f_piv(pt, pdh, pdl, pdc)
 [wP, wR1, wR2, wR3, wS1, wS2, wS3] = f_piv(pt, pwh, pwl, pwc)
 
-ph = ta.pivothigh(high, iSwing, iSwing)
-pl = ta.pivotlow(low, iSwing, iSwing)
+ph = ta.pivothigh(high, cSwing, cSwing)
+pl = ta.pivotlow(low, cSwing, cSwing)
 var float sh1 = na
 var float sh2 = na
 var float sl1 = na
@@ -194,7 +215,7 @@ f_add(lvP, lvS, lvT, lvN, sh1, 0, 3, "SWING H")
 f_add(lvP, lvS, lvT, lvN, sh2, 0, 3, "SWING H2")
 f_add(lvP, lvS, lvT, lvN, sl1, 0, 3, "SWING L")
 f_add(lvP, lvS, lvT, lvN, sl2, 0, 3, "SWING L2")
-if iRound
+if cRound
     f_add(lvP, lvS, lvT, lvN, rnDn, 1, 0, "ROUND")
     f_add(lvP, lvS, lvT, lvN, rnUp, 1, 0, "ROUND")
 
@@ -204,16 +225,18 @@ var zBot   = array.new_float()
 var zScore = array.new_float()
 var zCnt   = array.new_int()
 var zName  = array.new_string()
+var zWk    = array.new_int()
 array.clear(zTop)
 array.clear(zBot)
 array.clear(zScore)
 array.clear(zCnt)
 array.clear(zName)
+array.clear(zWk)
 
 nLv = array.size(lvP)
 if nLv >= 2 and not na(atrV)
     idx  = array.sort_indices(lvP, order.ascending)
-    tol  = iTol * atrV
+    tol  = cTol * atrV
     gCnt = 0
     gS   = false
     gF   = false
@@ -227,13 +250,14 @@ if nLv >= 2 and not na(atrV)
         v = array.get(lvP, j)
         newGrp = gCnt == 0 or v - gHi > tol or v - gLo > 2.0 * tol
         if newGrp and gCnt > 0
-            [ok, zt, zb, sc] = f_final(gCnt, gS, gF, gW, gSw, gLo, gHi, iMinSrc, atrV)
+            [ok, zt, zb, sc] = f_final(gCnt, gS, gF, gW, gSw, gLo, gHi, cMinSrc, atrV)
             if ok
                 array.push(zTop, zt)
                 array.push(zBot, zb)
                 array.push(zScore, sc)
                 array.push(zCnt, gCnt)
                 array.push(zName, gNm)
+                array.push(zWk, gW ? 1 : 0)
             gCnt := 0
             gS   := false
             gF   := false
@@ -252,13 +276,14 @@ if nLv >= 2 and not na(atrV)
         gSw := gSw or tier == 3
         gNm := gNm == "" ? array.get(lvN, j) : gNm + " + " + array.get(lvN, j)
     if gCnt > 0
-        [ok2, zt2, zb2, sc2] = f_final(gCnt, gS, gF, gW, gSw, gLo, gHi, iMinSrc, atrV)
+        [ok2, zt2, zb2, sc2] = f_final(gCnt, gS, gF, gW, gSw, gLo, gHi, cMinSrc, atrV)
         if ok2
             array.push(zTop, zt2)
             array.push(zBot, zb2)
             array.push(zScore, sc2)
             array.push(zCnt, gCnt)
             array.push(zName, gNm)
+            array.push(zWk, gW ? 1 : 0)
 
 // ═════════════ SIGNAL & PLAN ═════════════
 sideI = iSide == "Long saja" ? 1 : iSide == "Short saja" ? -1 : 0
@@ -308,13 +333,13 @@ f_plan(d, zi, p, atrNow) =>
     e  = close
     t  = array.get(zTop, zi)
     b  = array.get(zBot, zi)
-    s  = d == 1 ? math.min(b, low) - iSlBuf * slm * atrNow : math.max(t, high) + iSlBuf * slm * atrNow
+    s  = d == 1 ? math.min(b, low) - cSlBuf * slm * atrNow : math.max(t, high) + cSlBuf * slm * atrNow
     rk = math.min(math.max(math.abs(e - s), 0.5 * atrNow), 3.0 * atrNow)
     s := e - d * rk
-    t1 = e + d * rk * iR1 * rsc
-    t2 = e + d * rk * iR2 * rsc
-    t3 = e + d * rk * iR3 * rsc
-    if iMagnet
+    t1 = e + d * rk * cR1 * rsc
+    t2 = e + d * rk * cR2 * rsc
+    t3 = e + d * rk * cR3 * rsc
+    if cMagnet
         float bestEdge = na
         bestDist = 1e18
         n = array.size(zTop)
@@ -329,6 +354,46 @@ f_plan(d, zi, p, atrNow) =>
             snap = bestEdge - d * 0.05 * atrNow
             t2 := d == 1 ? math.max(snap, t1 + syminfo.mintick) : math.min(snap, t1 - syminfo.mintick)
     [e, s, t1, t2, t3]
+
+// ═════════════ MACHINE LEARNING: skor peluang setup ═════════════
+ema50  = ta.ema(close, 50)
+ema200 = ta.ema(close, 200)
+rsi14  = ta.rsi(close, 14)
+ema50x = ema50[10]
+clampF(v, lo, hi) =>
+    math.max(lo, math.min(hi, nz(v)))
+f_ml(d, k, zi, e, rk) =>
+    t = array.get(zTop, zi)
+    b = array.get(zBot, zi)
+    rng = math.max(high - low, syminfo.mintick)
+    x_dir = d
+    x_hold = k == 1 ? 1 : 0
+    x_cnt = array.get(zCnt, zi)
+    x_score = array.get(zScore, zi) / 100
+    x_wk = array.get(zWk, zi)
+    x_zoneH = (t - b) / atrV
+    x_riskAtr = rk / atrV
+    x_act = math.min(actV, 5)
+    x_body = math.abs(close - open) / rng
+    x_wick = d == 1 ? (math.min(open, close) - low) / rng : (high - math.max(open, close)) / rng
+    x_trend200 = clampF((e - ema200) / atrV * d, -10, 10)
+    x_trend50 = clampF((e - ema50) / atrV * d, -10, 10)
+    x_slope50 = clampF((ema50 - ema50x) / atrV * d, -3, 3)
+    x_rsi = nz((rsi14 - 50) / 50 * d)
+    x_atrPct = atrV / e * 100
+    opp = 1e18
+    n = array.size(zTop)
+    for i = 0 to n - 1
+        edge = d == 1 ? array.get(zBot, i) : array.get(zTop, i)
+        if (edge - e) * d > 0
+            opp := math.min(opp, math.abs(edge - e))
+    x_room = math.min(opp / rk, 5)
+    x_dayPos = na(pdh) ? 0.0 : clampF(((e - pdl) / math.max(pdh - pdl, syminfo.mintick) - 0.5) * d, -2, 3)
+    x_wkPos = na(pwh) ? 0.0 : clampF(((e - pwl) / math.max(pwh - pwl, syminfo.mintick) - 0.5) * d, -2, 3)
+    ${ML.b.toFixed(6)}${ML_EXPR}
+mlTh = ${ML.th.toFixed(6)}
+mlProb(z) =>
+    1 / (1 + math.exp(-z))
 
 // ═════════════ PROFILE TOURNAMENT (ledger virtual per profil) ═════════════
 // 5 ledger (Balanced, Strict, Scalp, Swing, Auto) × NF kolom dalam satu array
@@ -430,8 +495,8 @@ stepLedger(p, w1, w2, maxB) =>
                 lgSet(p, F_GL, lg(p, F_GL) - acc)
     ev
 
-modeI   = iMode == "Both (Hold + Breakout)" ? 0 : iMode == "Hold Reversals Only" ? 1 : 2
-dispIdx = iProf == "Auto (Best EV)" ? 4 : iProf == "Balanced" ? 0 : iProf == "Strict 3x+ Stack" ? 1 : iProf == "Scalp Fast" ? 2 : 3
+modeI   = isOpt ? 2 : iMode == "Both (Hold + Breakout)" ? 0 : iMode == "Hold Reversals Only" ? 1 : 2
+dispIdx = isOpt ? 3 : iProf == "Auto (Best EV)" ? 4 : iProf == "Balanced" ? 0 : iProf == "Strict 3x+ Stack" ? 1 : iProf == "Scalp Fast" ? 2 : 3
 
 bp     = 0
 bestEv = -1e9
@@ -454,11 +519,12 @@ float dS  = na
 float dT1 = na
 float dT2 = na
 float dT3 = na
+float dProb = na
 
 if barstate.isconfirmed and not na(atrV)
     for p = 0 to 4
         prof = p == 4 ? bp : p
-        ev   = stepLedger(p, 0.5, 0.3, iMaxBars)
+        ev   = stepLedger(p, 0.5, 0.3, cMaxBars)
         if p == dispIdx
             dEv    := ev
             dH1    := lg(p, F_H1) == 1
@@ -469,8 +535,12 @@ if barstate.isconfirmed and not na(atrV)
             if sd != 0
                 [e, s, t1, t2, t3] = f_plan(sd, szi, prof, atrV)
                 c = array.get(zCnt, szi)
-                openPlan(p, sd, sk, c, e, s, t1, t2, t3)
-                if p == dispIdx
+                mz = f_ml(sd, sk, szi, e, math.abs(e - s))
+                take = not mlOn or p != dispIdx or mz >= mlTh
+                if take
+                    openPlan(p, sd, sk, c, e, s, t1, t2, t3)
+                if take and p == dispIdx
+                    dProb := mlProb(mz)
                     dOpenDir := sd
                     dOpenK   := sk
                     dOpenC   := c
@@ -512,6 +582,7 @@ plot(supScore, "Nearest Support Score", display = display.data_window)
 plot(resScore, "Nearest Resistance Score", display = display.data_window)
 plot(nZ, "Active Zones", display = display.data_window)
 plot(dispEvR, "Avg R per Trade", display = display.data_window)
+plot(dProb, "ML Peluang Berhasil", display = display.data_window)
 `;
 
   const DRAW = String.raw`
@@ -570,7 +641,7 @@ if showPlan and dOpenDir != 0
     array.push(pLines, line.new(t0, dT1, tEnd, dT1, color = color.new(bullC, 40), width = 1))
     array.push(pLines, line.new(t0, dT2, tEnd, dT2, color = color.new(bullC, 40), width = 1))
     array.push(pLines, line.new(t0, dT3, tEnd, dT3, color = color.new(bullC, 40), width = 1))
-    sigTxt = (dOpenDir == 1 ? "BUY" : "SELL") + "\n" + (dOpenK == 1 ? "HOLD" : "BREAKOUT") + " · " + str.tostring(dOpenC) + "x"
+    sigTxt = (dOpenDir == 1 ? "BUY" : "SELL") + "\n" + (dOpenK == 1 ? "HOLD" : "BREAKOUT") + " · " + str.tostring(dOpenC) + "x" + (isOpt ? "\nML " + str.tostring(dProb * 100, "#") + "%" : "")
     array.push(pLabels, label.new(t0, dOpenDir == 1 ? low : high, sigTxt, style = dOpenDir == 1 ? label.style_label_up : label.style_label_down, color = dc, textcolor = color.black, size = size.small))
     array.push(pLabels, label.new(tEnd, dE, "ENTRY " + str.tostring(dE, format.mintick), style = label.style_label_left, color = color.new(color.black, 100), textcolor = fgC, size = size.small))
     array.push(pLabels, label.new(tEnd, dS, "SL " + str.tostring(dS, format.mintick), style = label.style_label_left, color = color.new(color.black, 100), textcolor = bearC, size = size.small))
@@ -624,8 +695,8 @@ if barstate.islast
     table.clear(dash, 0, 0, 3, 12)
     table.cell(dash, 0, 0, "KEY LEVEL CONFLUENCE", text_color = zoneC, text_size = tblSz, text_formatting = text.format_bold)
     table.merge_cells(dash, 0, 0, 3, 0)
-    f_row(dash, 1, "Mode", iMode, fgC, tblSz)
-    profTxt = dispIdx == 4 ? "Auto → " + f_pname(bp) : f_pname(dispIdx)
+    f_row(dash, 1, "Mode", isOpt ? "Confirmed Breakouts Only" : iMode, fgC, tblSz)
+    profTxt = (dispIdx == 4 ? "Auto → " + f_pname(bp) : f_pname(dispIdx)) + (isOpt ? " · Optimasi 4H" : "") + (mlOn ? " · ML ≥" + str.tostring(mlProb(mlTh) * 100, "#") + "%" : "")
     f_row(dash, 2, "Profile", profTxt, fgC, tblSz)
     actTxt = dlActive ? (dlDir == 1 ? "LONG" : "SHORT") + " · " + (lg(dispIdx, F_KIND) == 1 ? "HOLD" : "BREAKOUT") + " · " + str.tostring(lg(dispIdx, F_CNT)) + "x" + (lg(dispIdx, F_H1) == 1 ? " · BE ON" : "") : "FLAT — menunggu"
     f_row(dash, 3, "Signal", actTxt, dlActive ? (dlDir == 1 ? bullC : bearC) : color.new(fgC, 40), tblSz)
@@ -695,12 +766,12 @@ if dOpenDir != 0
   const indicator = `${LICENSE}
 //@version=6
 indicator("Key Level Confluence & Target Zones [PhenLabs]", shorttitle = "KLCTZ [PhenLabs]", overlay = true, max_lines_count = 200, max_labels_count = 200, max_boxes_count = 200)
-${COMMON}${DRAW}`;
+${common('Asli (PhenLabs)', 'Mati')}${DRAW}`;
 
   const strategy = `${LICENSE}
 //@version=6
 strategy("KLCTZ Strategy [PhenLabs]", overlay = true, initial_capital = 1000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, commission_value = 0.1, max_lines_count = 200, max_labels_count = 200, max_boxes_count = 200)
-${COMMON}${EXEC}${DRAW}`;
+${common('Optimasi Luna 4H', 'Ambil ±30% skor terbaik')}${EXEC}${DRAW}`;
 
   const api = { indicator, strategy };
   root.LunaKLCTZ = api;

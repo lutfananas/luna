@@ -881,6 +881,12 @@ if ta.crossunder(fast, slow)
       "e84b3497",
       "fcfb0fd0",
       "fe2b1ded"
+    ],
+    "klctz-ind": [
+      "dcb18089"
+    ],
+    "klctz-strat": [
+      "f1ae1c01"
     ]
   };
   const hashCode = (code) => {
