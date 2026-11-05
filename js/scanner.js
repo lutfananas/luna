@@ -96,6 +96,32 @@
         };
       },
     },
+    ai: {
+      label: 'Luna AI Signal 1H',
+      scriptName: 'Luna AI Strategy 1H',
+      exampleKey: 'luna-ai-strat',
+      bars: 1500, // model butuh ±800 candle pemanasan
+      probe: [
+        'plot(pAct ? pDir : 0, "__dir", display = display.none)',
+        'plot(pBar, "__bar", display = display.none)',
+        'plot(pE, "__e", display = display.none)',
+        'plot(pE - pDir * pRK, "__sl", display = display.none)',
+        'plot(pT1, "__t1", display = display.none)',
+        'plot(pT2, "__t2", display = display.none)',
+        'plot(pT2, "__t3", display = display.none)',
+      ],
+      read(P, bars, maxAge) {
+        const L = bars.length - 1;
+        const dir = P.__dir[L];
+        if (!dir) return null;
+        const sb = Math.max(0, Math.min(L, P.__bar[L]));
+        if (L - sb > maxAge) return null;
+        return {
+          dir, status: L === sb ? 'signal' : 'filled', signalTime: bars[sb].time, age: L - sb,
+          entry: P.__e[L], sl: P.__sl[L], tp1: P.__t1[L], tp2: P.__t2[L], tp3: P.__t3[L],
+        };
+      },
+    },
   };
 
   // buang candle terakhir jika belum close

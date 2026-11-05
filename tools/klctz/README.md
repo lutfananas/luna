@@ -21,3 +21,15 @@ node tools/klctz/fetch.js
 node tools/klctz/opt.js 4h 15 && node tools/klctz/select.js 4h
 node tools/klctz/final.js
 ```
+
+## Luna AI Signal 1H
+
+- `ai.js`: 29 fitur kausal per candle 1H (tren, momentum, volatilitas, volume, siklus 30 hari, level harian/mingguan,
+  jam & hari), label trade bracket (SL 3×ATR, TP1 1R 50% → BE, TP2 2R, time exit 72 jam, komisi 0,1%),
+  boosted trees kedalaman 2, dan evaluasi berurutan per koin (satu posisi sekaligus).
+- `ai-test.js`: model dilatih di periode latih saja, lalu dinilai di validasi & tes.
+- `ai-train.js`: model final (latih + validasi) → `luna-ai-model.json`, yang dibenamkan di `js/scripts-ai.js`.
+
+```
+SYM=1 CYC720=1 NO1200=1 WARM=800 node --max-old-space-size=7000 tools/klctz/ai-test.js
+```

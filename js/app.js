@@ -1850,7 +1850,7 @@
         while (next < syms.length) {
           const sym = syms[next++];
           try {
-            const bars = Scanner.closedBars(await Data.fetchBinance(sym, tf, 600), ms);
+            const bars = Scanner.closedBars(await Data.fetchBinance(sym, tf, Scanner.ADAPTERS[sig.strat].bars || 600), ms);
             const s = Scanner.evaluate(sig.strat, code, bars, { tf, symbol: sym, inputs });
             if (s) out.push(s);
           } catch (e) { errs++; lastErr = `${sym}: ${e.message}`; }
