@@ -91,8 +91,8 @@ code, kbd { font-family: var(--mono); font-size: 12px; background: var(--panel-2
 .layout { display: flex; height: calc(100% - 46px); }
 .center { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .chart-wrap { position: relative; flex: 1; min-height: 120px; }
-#chart { position: absolute; inset: 0; }
-.legend { position: absolute; left: 10px; top: 6px; z-index: 3; pointer-events: none; font-size: 12px; line-height: 1.6; text-shadow: 0 0 3px var(--bg); }
+#chart { position: absolute; inset: 0 0 0 34px; }
+.legend { position: absolute; left: 44px; top: 6px; z-index: 3; pointer-events: none; font-size: 12px; line-height: 1.6; text-shadow: 0 0 3px var(--bg); }
 .legend .sym { font-weight: 700; font-size: 14px; margin-right: 8px; }
 .legend .up { color: var(--green); }
 .legend .down { color: var(--red); }
@@ -101,7 +101,7 @@ code, kbd { font-family: var(--mono); font-size: 12px; background: var(--panel-2
 .pine-tables-host { position: absolute; inset: 0 70px 28px 0; pointer-events: none; z-index: 3; }
 .pine-tables { position: absolute; display: flex; flex-direction: column; gap: 6px; }
 .pine-tables.pos-top-right { top: 8px; right: 8px; }
-.pine-tables.pos-top-left { top: 60px; left: 10px; }
+.pine-tables.pos-top-left { top: 60px; left: 44px; }
 .pine-tables.pos-top-center { top: 8px; left: 50%; transform: translateX(-50%); }
 .pine-tables.pos-middle-right { top: 50%; right: 8px; transform: translateY(-50%); }
 .pine-tables.pos-middle-left { top: 50%; left: 10px; transform: translateY(-50%); }
@@ -256,3 +256,11 @@ button.sell { background: var(--red); border-color: var(--red); color: #fff; fon
 .yr-line .yr { border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; font-size: 11px; line-height: 1.5; opacity: 0.75; }
 .yr-line .yr.past { opacity: 0.5; }
 .yr-line .yr.now { opacity: 1; border-color: var(--yellow); background: rgba(247, 201, 72, 0.12); }
+
+/* ── Alat gambar manual ── */
+.draw-toolbar { position: absolute; left: 0; top: 0; bottom: 0; width: 34px; z-index: 4; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; background: var(--panel); border-right: 1px solid var(--border); }
+.draw-toolbar button { width: 28px; height: 28px; padding: 0; border: none; background: transparent; color: var(--text); font-size: 15px; line-height: 1; border-radius: 4px; }
+.draw-toolbar button:hover { background: var(--panel-2); }
+.draw-toolbar button.active { background: var(--accent); color: #fff; }
+.draw-toolbar .sep { width: 20px; height: 1px; background: var(--border); margin: 4px 0; }
+.chart-wrap.drawing #chart { cursor: crosshair; }
