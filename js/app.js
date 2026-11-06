@@ -463,8 +463,9 @@
     }
     return dailyCache.key === sym ? dailyCache.bars : null; // data lama (kedaluwarsa) tetap dipakai sambil memuat ulang
   }
-  function mapDailyResult(res, daily, bars) {
-    const DAY = 864e5, n = bars.length, last = bars[n - 1];
+  // nr = tanpa repaint: candle kecil hanya memakai nilai candle besar yang SUDAH close (untuk Luna AI)
+  function mapDailyResult(res, daily, bars, period, nr) {
+    const DAY = period || 864e5, n = bars.length, last = bars[n - 1];
     const step = n > 1 ? bars[n - 1].time - bars[n - 2].time : 3600e3;
     const dayT = (d) => (d < daily.length ? daily[Math.max(0, d)].time : daily[daily.length - 1].time + (d - (daily.length - 1)) * DAY);
     const idxAt = (t) => { // candle chart yang memuat waktu t
@@ -508,9 +509,37 @@
     }
     // plot: nilai hari yang memuat candle chart
     const dIdx = (t) => { let lo = 0, hi = daily.length - 1; if (t < daily[0].time) return -1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (daily[m].time <= t) lo = m; else hi = m - 1; } return lo; };
-    const map = bars.map((b) => dIdx(b.time));
+    const map = nr ? bars.map((b) => { const d = dIdx(b.time + step); return d >= 0 && daily[d].time + DAY <= b.time + step ? d : d - 1; }) : bars.map((b) => dIdx(b.time));
     const plots = res.plots.map((p) => Object.assign({}, p, { values: map.map((d) => (d >= 0 ? p.values[d] : NaN)), colors: p.colors ? map.map((d) => (d >= 0 ? p.colors[d] : undefined)) : p.colors }));
-    return Object.assign({}, res, { drawings: out, plots, shapes: [], bgcolors: [], barcolors: null, dailyBased: true });
+    if (!nr) return Object.assign({}, res, { drawings: out, plots, shapes: [], bgcolors: [], barcolors: null, dailyBased: true });
+    // Luna AI di timeframe kecil: penanda, trade & equity ikut dipetakan
+    const shapes = (res.shapes || []).map((sh) => Object.assign({}, sh, { hits: sh.hits.map((h) => Object.assign({}, h, { i: endIdx2(h.i) })) }));
+    let strategy = res.strategy;
+    if (strategy) {
+      const mt = (t) => Object.assign({}, t, { entryBar: Math.max(0, startIdx(t.entryBar)), exitBar: t.exitBar == null ? t.exitBar : Math.max(0, startIdx(t.exitBar)) });
+      // hanya trade di dalam jendela chart; equity dimulai dari modal awal di candle pertama chart
+      const trades = strategy.trades.filter((t) => t.entryTime >= bars[0].time).map(mt);
+      const d0 = map.find((d) => d >= 0), base = d0 === undefined ? 0 : (strategy.equity[Math.max(0, d0 - 1)] || strategy.initialCapital) - strategy.initialCapital;
+      const equity = map.map((d) => (d >= 0 ? strategy.equity[d] - base : strategy.initialCapital));
+      strategy = Object.assign({}, strategy, { trades, openTrades: (strategy.openTrades || []).filter((t) => t.entryTime >= bars[0].time).map(mt), equity });
+    }
+    return Object.assign({}, res, { drawings: out, plots, shapes, strategy, bgcolors: [], barcolors: null, dailyBased: true, htfLabel: '1H' });
+  }
+
+  // Luna AI dilatih di 1H: di chart 1m–30m dihitung dari data 1H lalu dipetakan ke candle kecil
+  const isAICode = (code) => /(indicator|strategy)\("Luna AI/.test(code);
+  const LTF = ['1m', '3m', '5m', '15m', '30m'];
+  const h1Cache = { key: '', bars: null, at: 0, loading: null, failedAt: 0 };
+  function h1BarsFor(sym) {
+    const fresh = h1Cache.key === sym && h1Cache.bars && Date.now() - h1Cache.at < 60e3;
+    if (!fresh && !h1Cache.loading && Date.now() - h1Cache.failedAt > 60e3) {
+      h1Cache.loading = Data.fetchBinance(sym, '1h', 3000).then((b) => {
+        const changed = !(h1Cache.key === sym && h1Cache.bars && h1Cache.bars.length === b.length && h1Cache.bars[b.length - 1].time === b[b.length - 1].time && h1Cache.bars[b.length - 1].close === b[b.length - 1].close);
+        Object.assign(h1Cache, { key: sym, bars: b, at: Date.now(), loading: null });
+        if (changed && settings.symbol === sym && LTF.includes(settings.tf)) runAll();
+      }).catch((e) => { Object.assign(h1Cache, { loading: null, failedAt: Date.now() }); log(`Luna AI: gagal memuat data 1H (${e.message})`, true); });
+    }
+    return h1Cache.key === sym ? h1Cache.bars : null;
   }
 
   function runScript(sc) {
@@ -519,9 +548,13 @@
     let res;
     try {
       const daily = isCycleCode(sc.code) && S.source === 'binance' && settings.tf !== '1d' ? dailyBarsFor(settings.symbol) : null;
+      const h1 = !daily && isAICode(sc.code) && S.source === 'binance' && LTF.includes(settings.tf) ? h1BarsFor(settings.symbol) : null;
       if (daily && daily.length > 60) {
         res = Pine.run(getCompiled(sc.code), daily, { inputs: sc.inputs, symbol: settings.symbol, timeframe: '1d' });
         if (!res.error) res = mapDailyResult(res, daily, S.bars);
+      } else if (h1 && h1.length > 100) {
+        res = Pine.run(getCompiled(sc.code), h1, { inputs: sc.inputs, symbol: settings.symbol, timeframe: '1h' });
+        if (!res.error) res = mapDailyResult(res, h1, S.bars, 3600e3, true);
       } else res = Pine.run(getCompiled(sc.code), S.bars, { inputs: sc.inputs, symbol: settings.symbol, timeframe: S.source === 'csv' ? null : settings.tf });
     } catch (e) {
       res = { decl: Object.assign(Pine.peekDecl(sc.code), { overlay: true }), plots: [], shapes: [], hlines: [], bgcolors: [], barcolors: null, inputs: [], strategy: null, error: e.message };
@@ -532,7 +565,7 @@
     const ms = (performance.now() - t0).toFixed(0);
     for (const w of res.warnings || []) log(`${sc.name}: ⚠ ${w}`);
     if (res.error) log(`${sc.name}: ${res.error}`, true);
-    else log(`${sc.name}: OK (${ms} ms${res.strategy ? `, ${res.strategy.trades.length} trade` : ''}${res.dailyBased ? ', dihitung dari data harian' : ''})`);
+    else log(`${sc.name}: OK (${ms} ms${res.strategy ? `, ${res.strategy.trades.length} trade` : ''}${res.dailyBased ? (res.htfLabel ? ', analisa dari data 1H' : ', dihitung dari data harian') : ''})`);
     return res;
   }
 
