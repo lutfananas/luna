@@ -12,3 +12,10 @@ Hasil (komisi 0,05%, sebelum Sep 2026 = desain, Sep–Nov 2026 = tes):
 - Ikut spike ≥5× (15m): sebelum Sep +0,10R/trade, Sep–Nov +0,20R/trade. Melawan spike: rugi di semua periode.
 - Konfirmasi di 16 koin crypto 1H (2023–2026): ikut spike ≥5× +0,05R (13/16 koin untung), melawan spike −0,09R (0/16).
 - ML khusus SNDK: validasi Jul–Agu +0,15 s/d +0,26R, tetapi **tes Sep–Nov −0,08R** → tidak dipakai (data 7 bulan terlalu sedikit).
+
+## Uji independen di 19 saham/komoditas perpetual (Nov 2026)
+
+`download-perps.py <folder> NVDAUSDT MUUSDT WDCUSDT ...`, lalu `stocks-spike-test.js` dan `stocks-ai-test.js` (`PERP_DATA=<folder>`).
+- Aturan spike SNDK (ikut spike ≥5×): **−0,11R/trade, hanya 2/19 pasar untung**; tanpa biaya pun ±0R
+  (ikut −0,002R, lawan −0,005R). Keuntungan spike di SNDK **tidak terbukti umum** → entry spike jadi opsi eksperimental.
+- Luna AI di saham/komoditas 1H: ±0R (komisi 0,05%); saham tenang (SPY/QQQ/AAPL) rugi, saham bergejolak untung.

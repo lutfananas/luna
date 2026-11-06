@@ -33,3 +33,12 @@ node tools/klctz/final.js
 ```
 SYM=1 CYC720=1 NO1200=1 WARM=800 node --max-old-space-size=7000 tools/klctz/ai-test.js
 ```
+
+## Luna AI v2 (Nov 2026): walk-forward + koin baru
+
+- `ai-walkforward.js`: latih ulang tiap kuartal (expanding window), uji 3 bulan berikutnya, 8 fold (2025–2026).
+  Varian lewat env: `NT`, `LR`, `ML` (minLeaf), `KEEP` (porsi skor teratas), `ENS`, `EX` (exit), `TRAIL`, `COSTMAX`.
+  `HOLD=1` juga menguji 16 koin yang tidak dipakai saat memilih desain (data di `data/klctz-new`).
+- Hasil (komisi 0,1%): model lama 228R (16 koin) / 232R (koin baru); **v2** (150 pohon, lr 0.05, minLeaf 1500,
+  top 8%, filter biaya 0,15R) **268–324R / 298R**.
+- `ai-deploy.js`: model final dari 32 koin sampai data terbaru → `luna-ai-model.json`.
