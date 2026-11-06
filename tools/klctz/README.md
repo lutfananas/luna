@@ -42,3 +42,11 @@ SYM=1 CYC720=1 NO1200=1 WARM=800 node --max-old-space-size=7000 tools/klctz/ai-t
 - Hasil (komisi 0,1%): model lama 228R (16 koin) / 232R (koin baru); **v2** (150 pohon, lr 0.05, minLeaf 1500,
   top 8%, filter biaya 0,15R) **268–324R / 298R**.
 - `ai-deploy.js`: model final dari 32 koin sampai data terbaru → `luna-ai-model.json`.
+
+## Analisa 1H, eksekusi M15/M5 (Nov 2026)
+
+`ai-signals-dump.js` mengekspor sinyal walk-forward → `signals.json`; `ai-ltf-exec.js` mensimulasikan cara eksekusi di
+candle 15m/5m (`TF=5m LTF_DIR=... SUF=`), komisi lewat `FEE` / `FEE_IN` / `FEE_OUT`.
+Hasil 16 koin Jan 2025–Okt 2026 (komisi 0,1%): masuk langsung 329R (15m) / 334R (5m); limit pullback 307–322R;
+trigger LTF + SL swing ketat −157R s/d −2.313R (0–5/16 koin untung); trigger tanpa memperketat SL 266–316R.
+Dengan komisi Futures 0,05%: 415R; entry limit (maker 0,02%) 417R.

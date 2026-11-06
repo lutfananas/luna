@@ -337,7 +337,7 @@ if barstate.islast and showTbl
     row(2, "Skor AI sekarang", not is1h ? "— (AI hanya di 1H)" : ready ? "Long " + fmtR(scL) + " · Short " + fmtR(scS) : "butuh ≥ " + str.tostring(WARM) + " candle (pilih 3000 bar)", ready and is1h ? fg : color.new(fg, 40))
     costNow = 2 * iFee / 100 * close / (SLK * atrV)
     row(3, "Ambang · biaya", "≥ " + fmtR(thr) + "R · biaya " + str.tostring(costNow, "#.###") + "R" + (iCostMax > 0 and costNow > iCostMax ? " (terlalu tenang, dilewati)" : ""), iCostMax > 0 and costNow > iCostMax ? colS : fg)
-    row(4, "Posisi", pAct ? (pDir == 1 ? "LONG" : "SHORT") + " sejak " + str.tostring(bar_index - pBar) + " candle" + (pH1 ? " · BE" : "") : "FLAT — menunggu", pAct ? (pDir == 1 ? colL : colS) : color.new(fg, 40))
+    row(4, "Posisi", pAct ? (pDir == 1 ? "LONG" : "SHORT") + " sejak " + str.tostring(bar_index - pBar) + (tfSec == 3600 ? " jam" : " candle") + (pH1 ? " · BE" : "") : "FLAT — menunggu", pAct ? (pDir == 1 ? colL : colS) : color.new(fg, 40))
     row(5, "Siklus", ready and is1h ? "hari ke-" + str.tostring((bar_index - lowIdx) / 24, "#.#") + " sejak low 30 hari" : "—", fg)
     days = na(firstBar) ? 0.0 : (bar_index - firstBar) / bpd
     row(6, "Trade di chart", str.tostring(nTr) + (days > 0 ? " (" + str.tostring(nTr / days, "#.##") + "/hari)" : ""), fg)
