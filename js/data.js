@@ -4,11 +4,14 @@
 
   const REST = ['https://data-api.binance.vision', 'https://api.binance.com', 'https://api1.binance.com'];
   const WS = ['wss://data-stream.binance.vision/ws', 'wss://stream.binance.com:9443/ws'];
-  // Binance Futures USDⓈ-M: untuk pair yang tidak ada di spot (mis. XAUUSDT emas, NVDAUSDT/SANDISKUSDT saham)
+  // Binance Futures USDⓈ-M: untuk pair yang tidak ada di spot (mis. XAUUSDT emas, NVDAUSDT/SNDKUSDT saham)
   const FUT_REST = ['https://fapi.binance.com'];
   const FUT_WS = ['wss://fstream.binance.com/ws'];
   const market = new Map(); // simbol → 'spot' | 'futures' (dipelajari dari daftar pair / respons API)
   const marketOf = (sym) => market.get(sym) || 'spot';
+  // nama lama → simbol Binance yang benar (SanDisk di Binance Futures = SNDKUSDT)
+  const ALIAS = { SANDISKUSDT: 'SNDKUSDT' };
+  const norm = (sym) => (sym && ALIAS[String(sym).toUpperCase()]) || sym;
   const isInvalidSymbol = (e) => /HTTP 400/.test(String(e && e.message)) && /-1121|Invalid symbol/i.test(String(e.message));
 
   const INTERVAL_MS = {
@@ -41,6 +44,7 @@
 
   /** Ambil `total` candle terakhir dari Binance (dengan paginasi mundur). */
   async function fetchBinance(symbol, interval, total, onProgress) {
+    symbol = norm(symbol);
     symbol = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (marketOf(symbol) === 'spot') {
       try {
@@ -77,6 +81,7 @@
 
   /** Langganan candle realtime. onKline(bar, isClosed). Mengembalikan fungsi untuk berhenti. */
   function subscribe(symbol, interval, onKline, onStatus) {
+    symbol = norm(symbol);
     const stream = `${symbol.toLowerCase()}@kline_${interval}`;
     let ws = null;
     let stopped = false;
@@ -225,6 +230,7 @@
    * onTick({symbol, price, open, quoteVolume}) dipanggil untuk tiap update. Mengembalikan fungsi stop.
    */
   function subscribeTickers(symbols, onTick, onStatus) {
+    symbols = symbols.map(norm);
     const fut = symbols.filter((x) => marketOf(x) === 'futures');
     const spot = symbols.filter((x) => marketOf(x) !== 'futures');
     const stops = [];
@@ -262,7 +268,7 @@
     return () => { stopped = true; if (ws) ws.close(); };
   }
 
-  const api = { fetchBinance, fetchSymbols, subscribeTickers, splitSymbol, subscribe, parseCSV, demo, INTERVAL_MS, QUOTES, marketOf };
+  const api = { norm, ALIAS, fetchBinance, fetchSymbols, subscribeTickers, splitSymbol, subscribe, parseCSV, demo, INTERVAL_MS, QUOTES, marketOf };
   root.LunaData = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
