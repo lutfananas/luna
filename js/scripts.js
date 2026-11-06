@@ -896,10 +896,12 @@ if ta.crossunder(fast, slow)
       "f1ae1c01"
     ],
     "luna-ai-ind": [
+      "a4ca613e",
       "be1b9bcd"
     ],
     "luna-ai-strat": [
-      "84fbf514"
+      "84fbf514",
+      "e22e9c0d"
     ]
   };
   const hashCode = (code) => {
