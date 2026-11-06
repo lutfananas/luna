@@ -511,18 +511,20 @@ console.log('Luna AI Signal 1H (model ML)');
     for (let k = 0; k < 6; k++) { p *= 1 + (rnd() - 0.5) * 0.008; h = Math.max(h, p); l = Math.min(l, p); }
     wb.push({ time: Date.UTC(2025, 0, 6) + i * 3600e3, open: o, high: h, low: l, close: p, volume: 100 + rnd() * 900 });
   }
-  ok(AI.MODEL.trees.length === 80 && AI.MODEL.th1 > AI.MODEL.th5, 'model 80 pohon + 2 ambang');
+  ok(AI.MODEL.trees.length === 150 && AI.MODEL.thK > AI.MODEL.thN, 'model v2: 150 pohon + 2 ambang');
   const pr = '\nplot(newDir, "zDir")\nplot(pScore, "zSc")\n';
-  const ri = Pine.run(Pine.compile(AI.indicator + pr), wb, { timeframe: '1h', symbol: 'TEST', inputs: { 'Tingkat seleksi': 'Normal (±5% skor teratas)' } });
+  const ri = Pine.run(Pine.compile(AI.indicator + pr), wb, { timeframe: '1h', symbol: 'TEST', inputs: { 'Tingkat seleksi': 'Normal (±8% skor teratas)', 'Lewati bila biaya > (R)': 0 } });
   ok(!ri.error && ri.drawings.table.length === 1, 'indikator jalan + panel ' + (ri.error || ''));
   const dir = ri.plots.find((x) => x.title === 'zDir').values, sc = ri.plots.find((x) => x.title === 'zSc').values;
   const sig = dir.map((v, i) => [v, i]).filter(([v]) => v);
-  ok(sig.length > 0 && sig.every(([, i]) => i >= 800 && sc[i] >= AI.MODEL.th5 - 1e-12), `sinyal hanya setelah pemanasan & skor ≥ ambang (${sig.length} sinyal)`);
+  ok(sig.length > 0 && sig.every(([, i]) => i >= 800 && sc[i] >= AI.MODEL.thN - 1e-12), `sinyal hanya setelah pemanasan & skor ≥ ambang (${sig.length} sinyal)`);
   const rc = Pine.run(Pine.compile(AI.indicator + pr), wb.slice(0, 2000), { timeframe: '1h', symbol: 'TEST' });
   ok(rc.plots.find((x) => x.title === 'zDir').values.every((v, k) => v === dir[k]), 'tanpa repaint: sinyal sama saat data bertambah');
   const rs = Pine.run(Pine.compile(AI.strategy + pr), wb, { timeframe: '1h', symbol: 'TEST' });
   const pos = new Set(rs.strategy.trades.map((t) => t.entryBar)).size + (rs.strategy.openTrades.length ? 1 : 0);
   ok(!rs.error && Math.abs(pos - sig.length) <= 1, `strategy: posisi broker = sinyal (${pos} vs ${sig.length})`);
+  const rf = Pine.run(Pine.compile(AI.indicator + pr), wb, { timeframe: '1h', symbol: 'TEST', inputs: { 'Komisi per sisi (%) — statistik & filter biaya': 3 } });
+  ok(rf.plots.find((x) => x.title === 'zDir').values.every((v) => !v), 'filter biaya: komisi terlalu besar dibanding SL → trade dilewati');
 }
 
 console.log('Luna AI: volume spike (relatif jam yang sama) & SNDK');
@@ -540,7 +542,7 @@ console.log('Luna AI: volume spike (relatif jam yang sama) & SNDK');
     wb.push({ time: Date.UTC(2026, 3, 6) + i * 900e3, open: o, high: h, low: l, close: p, volume: v });
   }
   const pr = '\nplot(newDir, "zDir")\nplot(vMult, "zV")\nplot(pKind, "zK")\n';
-  const r = Pine.run(Pine.compile(AI.strategy + pr), wb, { timeframe: '15m', symbol: 'SNDKUSDT' });
+  const r = Pine.run(Pine.compile(AI.strategy + pr), wb, { timeframe: '15m', symbol: 'SNDKUSDT', inputs: { 'Sumber sinyal': 'Volume Spike saja' } });
   ok(!r.error, 'jalan di SNDKUSDT 15m ' + (r.error || ''));
   const P = (n) => r.plots.find((x) => x.title === n).values;
   const vm = P('zV'), dir = P('zDir'), kind = P('zK');
@@ -549,11 +551,11 @@ console.log('Luna AI: volume spike (relatif jam yang sama) & SNDK');
   const spikes = wb.map((_, i) => i).filter((i) => i > 1000 && i % 173 === 0);
   ok(spikes.every((i) => vm[i] > 5), `spike sungguhan terdeteksi (${spikes.length}×, min ${Math.min(...spikes.map((i) => vm[i])).toFixed(1)}×)`);
   const ent = dir.map((d, i) => [d, i]).filter(([d]) => d);
-  ok(ent.length > 0 && ent.every(([d, i]) => kind[i] === 2 && vm[i] >= 5 && d === Math.sign(wb[i].close - wb[i].open)), `Auto di SNDK 15m: entry spike searah candle (${ent.length} entry)`);
-  const rc = Pine.run(Pine.compile(AI.strategy + pr), wb.slice(0, 2200), { timeframe: '15m', symbol: 'SNDKUSDT' });
+  ok(ent.length > 0 && ent.every(([d, i]) => kind[i] === 2 && vm[i] >= 5 && d === Math.sign(wb[i].close - wb[i].open)), `mode Volume Spike: entry searah candle spike (${ent.length} entry)`);
+  const rc = Pine.run(Pine.compile(AI.strategy + pr), wb.slice(0, 2200), { timeframe: '15m', symbol: 'SNDKUSDT', inputs: { 'Sumber sinyal': 'Volume Spike saja' } });
   ok(rc.plots.find((x) => x.title === 'zDir').values.every((v, k) => v === dir[k]), 'spike tanpa repaint');
   const rb = Pine.run(Pine.compile(AI.strategy + pr), wb, { timeframe: '15m', symbol: 'BTCUSDT' });
-  ok(rb.plots.find((x) => x.title === 'zDir').values.every((v) => !v), 'Auto di koin lain (non-1H): tidak ada entry spike');
+  ok(rb.plots.find((x) => x.title === 'zDir').values.every((v) => !v), 'default (AI saja) di 15m: tidak ada entry, spike hanya ditandai');
   const Dd = require('../js/data.js');
   ok(Dd.norm('SANDISKUSDT') === 'SNDKUSDT' && Dd.norm('BTCUSDT') === 'BTCUSDT', 'SANDISKUSDT dialihkan ke simbol Binance SNDKUSDT');
 }
