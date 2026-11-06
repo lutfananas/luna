@@ -897,9 +897,11 @@ if ta.crossunder(fast, slow)
     ],
     "luna-ai-ind": [
       "a4ca613e",
+      "bafe75b6",
       "be1b9bcd"
     ],
     "luna-ai-strat": [
+      "12d753a9",
       "84fbf514",
       "e22e9c0d"
     ]
