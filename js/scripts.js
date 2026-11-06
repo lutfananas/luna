@@ -894,6 +894,12 @@ if ta.crossunder(fast, slow)
     ],
     "klctz-strat": [
       "f1ae1c01"
+    ],
+    "luna-ai-ind": [
+      "be1b9bcd"
+    ],
+    "luna-ai-strat": [
+      "84fbf514"
     ]
   };
   const hashCode = (code) => {

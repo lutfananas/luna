@@ -29,6 +29,13 @@ gS = "Sinyal AI"
 gP = "Tampilan"
 iLevel = input.string("${levelDef}", "Tingkat seleksi", options = ["Normal (±5% skor teratas)", "Ketat (±1% skor teratas)"], group = gS, tooltip = "Normal: sekitar 0,2 trade/hari per koin (±3–4 trade/hari bila dipindai di 16 koin). Ketat: lebih jarang tetapi rata-rata R lebih tinggi.")
 iSide  = input.string("Long & Short", "Arah", options = ["Long & Short", "Long saja", "Short saja"], group = gS)
+iSrc0  = input.string("Auto", "Sumber sinyal", options = ["Auto", "AI + Volume Spike", "AI saja", "Volume Spike saja"], group = gS, tooltip = "Auto: SNDKUSDT (SanDisk) → AI + Volume Spike; koin lain → AI saja (di crypto, entry spike menurunkan hasil AI). AI hanya aktif di 1H. Volume Spike aktif di semua timeframe; untuk SNDKUSDT 15m dan 1H sudah diuji.")
+isSndk = str.contains(str.upper(syminfo.ticker), "SNDK") or str.contains(str.upper(syminfo.ticker), "SANDISK")
+iSrc = iSrc0 == "Auto" ? (isSndk ? (timeframe.in_seconds() == 3600 ? "AI + Volume Spike" : "Volume Spike saja") : "AI saja") : iSrc0
+gV = "Volume Spike"
+iSpkMin  = input.float(5.0, "Spike untuk entry (× volume normal)", minval = 1.5, step = 0.5, group = gV, tooltip = "Volume candle dibanding rata-rata volume di JAM YANG SAMA selama 10 hari terakhir (pembukaan bursa AS tidak dihitung spike palsu). Entry searah candle spike. Diuji di SNDKUSDT & 16 koin crypto: ikut spike ≥5× untung, melawan spike rugi.")
+iSpkMark = input.float(3.0, "Tanda spike ▲▼ mulai dari (×)", minval = 1.5, step = 0.5, group = gV)
+iFee     = input.float(0.1, "Komisi per sisi (%) untuk statistik panel", minval = 0, step = 0.01, group = gV)
 showPlan = input.bool(true, "Gambar zona & level", group = gP)
 showTbl  = input.bool(true, "Tampilkan panel AI", group = gP)
 colL = input.color(#26a69a, "Long", group = gP)
@@ -147,6 +154,24 @@ f_score(x) =>
 ${treeCode(m)}
     s
 
+// ═════════════ VOLUME SPIKE (relatif terhadap jam yang sama) ═════════════
+tfSec = timeframe.in_seconds()
+bpd = math.max(1, math.round(86400 / tfSec))
+float vSlot = na
+if bar_index >= bpd * 10
+    sm = 0.0
+    for k = 1 to 10
+        sm := sm + nz(volume[bpd * k])
+    vSlot := sm / 10
+vMult = vSlot > 0 ? nz(volume) / vSlot : na
+spkDir = math.sign(close - open)
+spkMark = not na(vMult) and vMult >= iSpkMark and spkDir != 0
+spkGo = not na(vMult) and vMult >= iSpkMin and spkDir != 0
+SPK_K = tfSec < 3600 ? 4.0 : 2.0
+SPK_MAXB = math.round((tfSec < 3600 ? 86400 : 172800) / tfSec)
+aiOn = iSrc != "Volume Spike saja" and tfSec == 3600
+spOn = iSrc != "AI saja"
+
 ready = bar_index >= WARM and not na(atrV) and atrV > 0 and not na(e480) and not na(lo720) and not na(c168)
 float scL = na
 float scS = na
@@ -167,6 +192,8 @@ var float pT2 = na
 var bool  pH1 = false
 var float pAcc = 0.0
 var float pScore = na
+var int   pKind = 0
+var int   pMaxB = 72
 var int   nTr = 0
 var int   nWin = 0
 var float sumR = 0.0
@@ -193,12 +220,12 @@ if barstate.isconfirmed and pAct and bar_index > pBar
             pAcc := pAcc + 0.5 * f_rr(pT2)
             done := true
             ev := 2
-        if not done and bar_index - pBar >= MAXB
+        if not done and bar_index - pBar >= pMaxB
             pAcc := pAcc + (pH1 ? 0.5 : 1.0) * f_rr(close)
             done := true
             ev := 5
     if done
-        pAcc := pAcc - 0.002 * pE / pRK
+        pAcc := pAcc - 2 * iFee / 100 * pE / pRK
         lastR := pAcc
         pAct := false
         nTr := nTr + 1
@@ -207,13 +234,15 @@ if barstate.isconfirmed and pAct and bar_index > pBar
             nWin := nWin + 1
 
 newDir = 0
-if barstate.isconfirmed and ready and not pAct
+if barstate.isconfirmed and not pAct and ((aiOn and ready) or (spOn and not na(vMult))) and not na(atrV)
     if na(firstBar)
         firstBar := bar_index
     bestD = scL >= scS ? 1 : -1
-    bestS = math.max(scL, scS)
-    if bestS >= thr and (sideI == 0 or sideI == bestD)
+    bestS = math.max(nz(scL, -1e9), nz(scS, -1e9))
+    if aiOn and ready and bestS >= thr and (sideI == 0 or sideI == bestD)
         newDir := bestD
+        pKind := 1
+        pMaxB := MAXB
         pAct := true
         pDir := bestD
         pBar := bar_index
@@ -225,11 +254,27 @@ if barstate.isconfirmed and ready and not pAct
         pH1 := false
         pAcc := 0.0
         pScore := bestS
+    else if spOn and spkGo and (sideI == 0 or sideI == spkDir)
+        newDir := int(spkDir)
+        pKind := 2
+        pMaxB := SPK_MAXB
+        pAct := true
+        pDir := newDir
+        pBar := bar_index
+        pE := close
+        pRK := SPK_K * atrV
+        pSL := close - newDir * pRK
+        pT1 := close + newDir * pRK
+        pT2 := close + newDir * 2 * pRK
+        pH1 := false
+        pAcc := 0.0
+        pScore := vMult
 
 plot(newDir, "Sinyal AI (+1 Buy / -1 Sell)", display = display.data_window)
 plot(scL, "Skor AI Long (R)", display = display.data_window)
 plot(scS, "Skor AI Short (R)", display = display.data_window)
 plot(ready ? (bar_index - lowIdx) / 24 : na, "Hari sejak low 30 hari", display = display.data_window)
+plot(vMult, "Volume × normal (jam sama)", display = display.data_window)
 `;
 
   const DRAW = String.raw`
@@ -258,10 +303,14 @@ if showPlan and ev != 0 and not na(lE)
             label.set_x(lb, bar_index)
         tag = ev == 2 ? "TP2 ✓" : ev == 3 ? "SL" : ev == 4 ? "BE" : "Time exit"
         bR := label.new(bar_index, close, (lastR >= 0 ? "+" : "") + str.tostring(lastR, "#.##") + "R · " + tag, style = label.style_label_left, color = color.new(lastR > 0 ? colL : colS, 20), textcolor = color.white, size = size.small)
+plotshape(showPlan and spkMark and spkDir > 0 and not (newDir != 0 and pKind == 2), "Volume spike naik", style = shape.triangleup, location = location.belowbar, color = color.new(#F5C542, 10), size = size.tiny)
+plotshape(showPlan and spkMark and spkDir < 0 and not (newDir != 0 and pKind == 2), "Volume spike turun", style = shape.triangledown, location = location.abovebar, color = color.new(#F5C542, 10), size = size.tiny)
 if showPlan and newDir != 0
     cc = newDir == 1 ? colL : colS
-    tEnd = bar_index + MAXB
-    label.new(bar_index, newDir == 1 ? low : high, (newDir == 1 ? "AI BUY" : "AI SELL") + "\nskor " + (pScore >= 0 ? "+" : "") + str.tostring(pScore, "#.###") + "R", style = newDir == 1 ? label.style_label_up : label.style_label_down, color = cc, textcolor = color.white, size = size.small, tooltip = "Skor = perkiraan rata-rata R trade ini menurut model (setelah komisi). Ambang " + str.tostring(thr, "#.###") + "R")
+    tEnd = bar_index + pMaxB
+    sigTxt = pKind == 1 ? (newDir == 1 ? "AI BUY" : "AI SELL") + "\nskor " + (pScore >= 0 ? "+" : "") + str.tostring(pScore, "#.###") + "R" : (newDir == 1 ? "⚡ SPIKE BUY" : "⚡ SPIKE SELL") + "\nvol " + str.tostring(pScore, "#.#") + "×"
+    tip = pKind == 1 ? "Skor = perkiraan rata-rata R trade ini menurut model (setelah komisi). Ambang " + str.tostring(thr, "#.###") + "R" : "Volume " + str.tostring(pScore, "#.#") + "× normal di jam yang sama; entry searah candle spike."
+    label.new(bar_index, newDir == 1 ? low : high, sigTxt, style = newDir == 1 ? label.style_label_up : label.style_label_down, color = pKind == 1 ? cc : color.new(#F5C542, 0), textcolor = pKind == 1 ? color.white : color.black, size = size.small, tooltip = tip)
     lE := line.new(bar_index, pE, tEnd, pE, color = color.new(#2962ff, 0), width = 2)
     lS := line.new(bar_index, pSL, tEnd, pSL, color = colS, width = 2)
     l1 := line.new(bar_index, pT1, tEnd, pT1, color = color.new(colL, 30), style = line.style_dashed)
@@ -272,7 +321,7 @@ if showPlan and newDir != 0
     b2 := label.new(tEnd, pT2, "TP2 2R · " + str.tostring(pT2, format.mintick), style = label.style_label_left, color = color.new(color.black, 100), textcolor = colL, size = size.small)
 
 // ═════════════ PANEL ═════════════
-var table tb = table.new(position.top_right, 2, 9, bgcolor = color.new(chart.bg_color, 8), border_color = color.new(chart.fg_color, 85), border_width = 1)
+var table tb = table.new(position.top_right, 2, 11, bgcolor = color.new(chart.bg_color, 8), border_color = color.new(chart.fg_color, 85), border_width = 1)
 fmtR(v) =>
     (v >= 0 ? "+" : "") + str.tostring(v, "#.###")
 row(r, k, v, c) =>
@@ -281,20 +330,23 @@ row(r, k, v, c) =>
 if barstate.islast and showTbl
     fg = chart.fg_color
     is1h = timeframe.in_seconds() == 3600
-    table.cell(tb, 0, 0, "LUNA AI SIGNAL 1H", text_color = #F5C542, text_size = size.small)
-    table.cell(tb, 1, 0, is1h ? "model aktif" : "⚠ model dilatih untuk 1H", text_color = is1h ? colL : colS, text_size = size.small)
+    table.cell(tb, 0, 0, "LUNA AI + VOLUME SPIKE", text_color = #F5C542, text_size = size.small)
+    table.cell(tb, 1, 0, aiOn ? "AI aktif" + (spOn ? " · spike aktif" : "") : spOn ? (is1h ? "spike aktif" : "AI hanya di 1H · spike aktif") : "⚠ AI butuh timeframe 1H", text_color = aiOn or spOn ? colL : colS, text_size = size.small)
     row(1, "Tingkat", iLevel, fg)
-    row(2, "Skor sekarang", ready ? "Long " + fmtR(scL) + " · Short " + fmtR(scS) : "butuh ≥ " + str.tostring(WARM) + " candle (pilih 3000 bar)", ready ? fg : colS)
+    row(2, "Skor AI sekarang", not is1h ? "— (AI hanya di 1H)" : ready ? "Long " + fmtR(scL) + " · Short " + fmtR(scS) : "butuh ≥ " + str.tostring(WARM) + " candle (pilih 3000 bar)", ready and is1h ? fg : color.new(fg, 40))
     row(3, "Ambang", "≥ " + fmtR(thr) + "R", fg)
     row(4, "Posisi", pAct ? (pDir == 1 ? "LONG" : "SHORT") + " sejak " + str.tostring(bar_index - pBar) + " candle" + (pH1 ? " · BE" : "") : "FLAT — menunggu", pAct ? (pDir == 1 ? colL : colS) : color.new(fg, 40))
-    row(5, "Siklus", ready ? "hari ke-" + str.tostring((bar_index - lowIdx) / 24, "#.#") + " sejak low 30 hari" : "—", fg)
-    days = na(firstBar) ? 0.0 : (bar_index - firstBar) / 24
+    row(5, "Siklus", ready and is1h ? "hari ke-" + str.tostring((bar_index - lowIdx) / 24, "#.#") + " sejak low 30 hari" : "—", fg)
+    days = na(firstBar) ? 0.0 : (bar_index - firstBar) / bpd
     row(6, "Trade di chart", str.tostring(nTr) + (days > 0 ? " (" + str.tostring(nTr / days, "#.##") + "/hari)" : ""), fg)
     row(7, "Win rate", nTr > 0 ? str.tostring(100.0 * nWin / nTr, "#") + "%" : "—", fg)
     row(8, "Rata-rata", nTr > 0 ? fmtR(sumR / nTr) + "R/trade (net komisi)" : "—", nTr > 0 ? (sumR > 0 ? colL : colS) : fg)
+    row(9, "Volume sekarang", na(vMult) ? "butuh " + str.tostring(bpd * 10) + " candle" : str.tostring(vMult, "#.#") + "× normal jam ini" + (vMult >= iSpkMin ? " ⚡ SPIKE" : ""), not na(vMult) and vMult >= iSpkMark ? #F5C542 : fg)
+    row(10, "Entry spike", not spOn ? "mati (sumber: " + iSrc + ")" : "≥ " + str.tostring(iSpkMin, "#.#") + "× · SL " + str.tostring(SPK_K, "#") + "×ATR · exit " + str.tostring(SPK_MAXB) + " candle", fg)
 
 alertcondition(newDir == 1, "Luna AI Buy", "Luna AI: BUY {{ticker}} @ {{close}}")
 alertcondition(newDir == -1, "Luna AI Sell", "Luna AI: SELL {{ticker}} @ {{close}}")
+alertcondition(spkGo, "Volume Spike", "Luna: volume spike {{ticker}} @ {{close}}")
 `;
 
   const EXEC = String.raw`
@@ -322,11 +374,11 @@ if newDir != 0
 
   const indicator = `//@version=6
 // Luna AI Signal 1H — dibuat oleh Luna (model ML, lihat tools/klctz). Bukan saran keuangan.
-indicator("Luna AI Signal 1H", overlay = true, max_lines_count = 300, max_labels_count = 300)
+indicator("Luna AI + Volume Spike", overlay = true, max_lines_count = 300, max_labels_count = 500)
 ${COMMON(MODEL, 'Normal (±5% skor teratas)')}${DRAW}`;
   const strategy = `//@version=6
 // Luna AI Signal 1H — versi strategy. Order di open candle berikutnya, komisi 0,1%.
-strategy("Luna AI Strategy 1H", overlay = true, initial_capital = 1000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, commission_value = 0.1, max_lines_count = 300, max_labels_count = 300)
+strategy("Luna AI + Volume Spike Strategy", overlay = true, initial_capital = 1000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, commission_value = 0.1, max_lines_count = 300, max_labels_count = 500)
 ${COMMON(MODEL, 'Normal (±5% skor teratas)')}${EXEC}${DRAW}`;
 
   const api = { indicator, strategy, MODEL };

@@ -30,6 +30,7 @@
   // news tambahan pengguna: [{d: 'YYYY-MM-DD', k: 0|1, s: teks}]
   let customNews = store.get('customNews', []);
   const settings = store.get('settings', { symbol: 'BTCUSDT', tf: '1h', count: 3000, bottomH: 280, collapsed: false });
+  if (Data.ALIAS && Data.ALIAS[settings.symbol]) settings.symbol = Data.ALIAS[settings.symbol];
 
   const S = {
     bars: [],
@@ -1538,10 +1539,12 @@
   const favs = new Set(store.get('favorites', ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']));
   // tambahan favorit (sekali saja, agar yang sudah dihapus pengguna tidak muncul lagi)
   if (!store.get('favAdded1', false)) {
-    for (const s of ['SANDISKUSDT', 'NVDAUSDT', 'XAUUSDT']) favs.add(s);
+    for (const s of ['SNDKUSDT', 'NVDAUSDT', 'XAUUSDT']) favs.add(s);
     store.set('favorites', [...favs]);
     store.set('favAdded1', true);
   }
+  // SANDISKUSDT tidak ada di Binance; simbol yang benar SNDKUSDT
+  for (const [old, cur] of Object.entries(Data.ALIAS || {})) if (favs.has(old)) { favs.delete(old); favs.add(cur); store.set('favorites', [...favs]); }
   const perpTag = (x) => (x.market === 'futures' || Data.marketOf(x.symbol) === 'futures' ? ' <span class="perp" title="Binance Futures (perpetual)">PERP</span>' : '');
 
   function fmtVol(v) {
