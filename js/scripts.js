@@ -874,12 +874,14 @@ if ta.crossunder(fast, slow)
     ],
     "crt-ind": [
       "4a6e4d97",
+      "737d3456",
       "9e2534d2"
     ],
     "crt-strat": [
       "50cd0678",
       "65cc2f95",
-      "970ea56e"
+      "970ea56e",
+      "c44a5cc8"
     ],
     "cycle-low": [
       "204c8129",

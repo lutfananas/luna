@@ -292,6 +292,16 @@ console.log('SATTAM CRT+TBS');
   ok(JSON.stringify(sigs(cut, K)) === JSON.stringify(sigs(ind, K)), 'tidak repaint: sinyal sebelum bar K sama dengan/ tanpa data masa depan');
   const tbl = ind.drawings.table[0];
   ok(tbl && tbl.props['cell:0:0'].text === 'HTF' && tbl.props['cell:1:0'].text === '1D', 'tabel status + HTF otomatis 1H → 1D');
+  // ⑨ EMA 48/380: filter tren & sweep di EMA hanya MENYARING sinyal (subset), tanpa repaint
+  const pr = '\nplot(sigBull ? 1 : sigBear ? -1 : 0, "zSig")\nplot(emaT4, "zT4")\nplot(bearEMA ? 1 : 0, "zBE")\nplot(bullEMA ? 1 : 0, "zBU")\n';
+  const base = { 'Entry Model': 'All', 'Kill Zones Only (New York time)': false, 'Require Key Level': false, 'HTF Mode': 'Manual', 'Manual HTF': '240' };
+  const lt = []; for (let i = 0; i < rwBars.length; i++) lt.push(rwBars[i]);
+  const s0 = runOn(CRT.indicator + pr, lt, base), sF = runOn(CRT.indicator + pr, lt, Object.assign({}, base, { 'Filter tren EMA 48/380': 'Searah 4H' })), sL = runOn(CRT.indicator + pr, lt, Object.assign({}, base, { 'Sweep harus di EMA 48/380 (4H/1H)': true }));
+  const V = (r, n) => r.plots.find((x) => x.title === n).values;
+  const n0 = V(s0, 'zSig').filter((v) => v).length, nF = V(sF, 'zSig').filter((v) => v).length, nL = V(sL, 'zSig').filter((v) => v).length;
+  ok(!s0.error && !sF.error && !sL.error && nF < n0 && nL < n0 && nL > 0, `filter EMA menyaring sinyal CRT (${n0} → tren 4H ${nF}, sweep di EMA ${nL})`);
+  ok(V(sF, 'zSig').every((v, i) => !v || v === V(sF, 'zT4')[i]), 'filter tren EMA 4H: semua sinyal searah EMA48 vs EMA380 4H');
+  ok(V(sL, 'zSig').every((v, i) => !v || (v > 0 ? V(sL, 'zBU')[i] : V(sL, 'zBE')[i]) === 1), 'sweep di EMA: setiap sinyal punya sweep yang menyentuh EMA 48/380');
 }
 
 console.log('EMA Cross: entry zona EMA, SL swing, TP zona');
