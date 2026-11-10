@@ -560,6 +560,44 @@ console.log('Luna AI: volume spike (relatif jam yang sama) & SNDK');
   ok(Dd.norm('SANDISKUSDT') === 'SNDKUSDT' && Dd.norm('BTCUSDT') === 'BTCUSDT', 'SANDISKUSDT dialihkan ke simbol Binance SNDKUSDT');
 }
 
+console.log('EMA 48/380 MTF: EMA timeframe besar tanpa repaint');
+{
+  const E = require('../js/scripts-ema.js');
+  const wb = [];
+  let p = 50, seed = 3;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 9000; i++) {
+    const o = p; let h = p, l = p;
+    for (let k = 0; k < 3; k++) { p *= 1 + (rnd() - 0.5) * 0.004 + Math.sin(i / 900) * 0.0004; h = Math.max(h, p); l = Math.min(l, p); }
+    wb.push({ time: Date.UTC(2026, 0, 1) + i * 900e3, open: o, high: h, low: l, close: p, volume: 100 });
+  }
+  const r = Pine.run(Pine.compile(E.indicator), wb, { timeframe: '15m', symbol: 'TEST' });
+  ok(!r.error && r.drawings.table.length === 1, 'indikator jalan + panel ' + (r.error || ''));
+  // referensi: close candle 4H yang sudah selesai → EMA ala Pine (seed SMA)
+  const ref = (ms, n) => {
+    const closes = [], out = []; let cur = null, v = NaN, s = 0, cnt = 0;
+    for (let i = 0; i < wb.length; i++) {
+      const b = Math.floor(wb[i].time / ms); if (cur !== null && b !== cur) {} cur = b;
+      if ((wb[i].time + 900e3) % ms === 0) { cnt++; const c = wb[i].close; if (cnt <= n) { s += c; if (cnt === n) v = s / n; } else v = (2 / (n + 1)) * c + (1 - 2 / (n + 1)) * v; }
+      out.push(v);
+    }
+    return out;
+  };
+  const P = (n) => r.plots.find((x) => x.title === n).values;
+  const same = (a, b) => a.every((v, i) => (Number.isNaN(v) && Number.isNaN(b[i])) || Math.abs(v - b[i]) < 1e-9);
+  ok(same(P('EMA 48 TF besar 1'), ref(144e5, 48)) && same(P('EMA 380 TF besar 1'), ref(144e5, 380)), 'EMA 48/380 4H = EMA dari close candle 4H yang sudah selesai');
+  ok(same(P('EMA 48 TF besar 2'), ref(36e5, 48)), 'EMA 48 1H benar');
+  const rc = Pine.run(Pine.compile(E.indicator), wb.slice(0, 7000), { timeframe: '15m', symbol: 'TEST' });
+  ok(rc.plots.find((x) => x.title === 'EMA 380 TF besar 1').values.every((v, i) => (Number.isNaN(v) && Number.isNaN(P('EMA 380 TF besar 1')[i])) || v === P('EMA 380 TF besar 1')[i]), 'tanpa repaint: nilai sama saat data bertambah');
+  const sup = r.shapes.find((x) => x.title === 'Pantul support').hits, a48 = P('EMA 48 TF besar 1'), a380 = P('EMA 380 TF besar 1');
+  ok(sup.length > 0 && sup.every((h) => a48[h.i] > a380[h.i]), `pantul support hanya saat tren 4H naik (${sup.length} tanda)`);
+  const AI = require('../js/scripts-ai.js');
+  const h1 = []; for (let i = 0; i < wb.length; i += 4) { const g = wb.slice(i, i + 4); h1.push({ time: g[0].time, open: g[0].open, high: Math.max(...g.map((x) => x.high)), low: Math.min(...g.map((x) => x.low)), close: g[g.length - 1].close, volume: 400 + (i % 7) * 50 }); }
+  const ra = Pine.run(Pine.compile(AI.indicator + '\nplot(newDir, "zDir")\nplot(emaTr, "zTr")\n'), h1, { timeframe: '1h', symbol: 'TEST', inputs: { 'Hanya searah tren EMA 48/380 4H': true, 'Lewati bila biaya > (R)': 0 } });
+  const dd = ra.plots.find((x) => x.title === 'zDir').values, tr = ra.plots.find((x) => x.title === 'zTr').values;
+  ok(!ra.error && dd.every((d, i) => !d || d === tr[i]), `Luna AI + filter EMA 4H: sinyal selalu searah tren (${dd.filter((d) => d).length} sinyal)`);
+}
+
 console.log('Scanner sinyal');
 {
   const SC = require('../js/scanner.js');

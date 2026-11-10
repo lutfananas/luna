@@ -504,6 +504,8 @@ barcolor(naikBeruntun >= 4 ? color.lime : na)
       { key: 'klctz-strat', name: 'KLCTZ Strategy [PhenLabs]', enabled: false, code: KLC.strategy },
     );
   }
+  const LEMA = root.LunaEMA || (typeof require !== 'undefined' ? require('./scripts-ema.js') : null);
+  if (LEMA) EXAMPLES.push({ key: 'ema-mtf', name: 'EMA 48/380 MTF (S/R)', enabled: false, code: LEMA.indicator });
   const LAI = root.LunaAI || (typeof require !== 'undefined' ? require('./scripts-ai.js') : null);
   if (LAI) {
     EXAMPLES.push(
