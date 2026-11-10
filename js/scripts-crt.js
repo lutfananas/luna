@@ -6,6 +6,8 @@
 (function (root) {
   'use strict';
 
+  const EMA = root.LunaEMA || (typeof require !== 'undefined' ? require('./scripts-ema.js') : null);
+
   function build(isStrategy) {
     // versi strategy: visual minimal agar tidak dobel saat dipakai bersama indikatornya
     const vis = isStrategy ? 'false' : 'true';
@@ -177,6 +179,10 @@ tpR    = input.float(0.6, "Fixed R Multiple", minval = 0.2, step = 0.1, group = 
 tp1Pct = input.float(70, "TP1 Close %", minval = 5, maxval = 90, step = 5, group = g8)
 tp2Pct = input.float(20, "TP2 Close %", minval = 5, maxval = 90, step = 5, group = g8, tooltip = "Sisa posisi ditutup di TP3.")
 slMove = input.string(S_BE_T1, "Move SL After TP", options = [S_NONE, S_BE, S_BE_T1], group = g8)
+g9 = "⑨  EMA 48/380 MTF"
+emaF    = input.string("Mati", "Filter tren EMA 48/380", options = ["Mati", "Searah 4H", "Searah 4H & 1H"], group = g9, tooltip = "Hanya ambil setup CRT searah tren EMA48 vs EMA380 (dihitung dari candle 4H/1H yang sudah close).")
+emaLv   = input.bool(false, "Sweep harus di EMA 48/380 (4H/1H)", group = g9, tooltip = "Likuiditas yang disapu CRT harus berada di sekitar EMA 48/380 4H atau 1H (EMA sebagai support/resistance). Toleransi = Touch Tolerance grup ③.")
+emaShow = input.bool(false, "Tampilkan EMA 48/380 4H", group = g9)
 ${strategyInputs}
 
 // ══════════════════════════════ ② HTF Engine ══════════════════════════════
@@ -190,6 +196,23 @@ atr      = ta.atr(14)
 tol      = klTolATR * nz(atr)
 slBuf    = slBufATR * nz(atr)
 canSignal = not confirmClose or barstate.isconfirmed
+
+// EMA 48/380 dari candle 4H & 1H yang sudah close (tanpa repaint)
+tfE4 = "240"
+tfE1 = "60"
+${EMA ? EMA.htfEma('e4', 'tfE4', [48, 380]) + EMA.htfEma('e1', 'tfE1', [48, 380]) : 'e4E48 = ta.ema(close, 48)\ne4E380 = ta.ema(close, 380)\ne1E48 = e4E48\ne1E380 = e4E380\n'}
+emaT4 = na(e4E380) or na(e4E48) ? 0 : e4E48 > e4E380 ? 1 : e4E48 < e4E380 ? -1 : 0
+emaT1 = na(e1E380) or na(e1E48) ? 0 : e1E48 > e1E380 ? 1 : e1E48 < e1E380 ? -1 : 0
+emaOkBear = emaF == "Mati" or (emaT4 < 0 and (emaF == "Searah 4H" or emaT1 < 0))
+emaOkBull = emaF == "Mati" or (emaT4 > 0 and (emaF == "Searah 4H" or emaT1 > 0))
+emaHit(lo, hi) =>
+    hit = false
+    for v in array.from(e4E48, e4E380, e1E48, e1E380)
+        if not na(v) and v >= lo - tol and v <= hi + tol
+            hit := true
+    hit
+plot(emaShow ? e4E48 : na, "EMA 48 4H", color = color.new(#FF9800, 15), linewidth = 2, style = plot.style_stepline)
+plot(emaShow ? e4E380 : na, "EMA 380 4H", color = color.new(#AB47BC, 10), linewidth = 2, style = plot.style_stepline)
 
 newHtf = htfValid and timeframe.change(htf)
 // C0 = dua candle HTF lalu, C1 = candle HTF terakhir yang sudah close, C2 = candle HTF berjalan
@@ -386,6 +409,8 @@ var int   bearType = na
 var int   bullType = na
 var bool  bearKL = false
 var bool  bullKL = false
+var bool  bearEMA = false
+var bool  bullEMA = false
 var bool  bearTBS = false
 var bool  bullTBS = false
 var float bearCISD = na
@@ -429,6 +454,7 @@ if newHtf and crtClassic and not na(c0H) and not na(c1C)
         bearArmBar := bar_index
         bearType := sweptL ? 4 : 3
         bearKL := klHit(c0H, c1H, -1)
+        bearEMA := emaHit(c0H, c1H)
         bearTBS := true
         bearCISD := bullRunOpen
         bearMSS := structL
@@ -443,6 +469,7 @@ if newHtf and crtClassic and not na(c0H) and not na(c1C)
         bullArmBar := bar_index
         bullType := sweptH ? 4 : 3
         bullKL := klHit(c1L, c0L, 1)
+        bullEMA := emaHit(c1L, c0L)
         bullTBS := true
         bullCISD := bearRunOpen
         bullMSS := structH
@@ -459,6 +486,7 @@ if htfValid and bearState == 0 and not na(c1H) and high > c1H
     bearCISD := bullRunOpen
     bearMSS := structL
     bearKL := klHit(c1H, high, -1)
+    bearEMA := emaHit(c1H, high)
     bearTBS := tbsBear
 if htfValid and bullState == 0 and not na(c1L) and low < c1L
     bullState := 1
@@ -470,6 +498,7 @@ if htfValid and bullState == 0 and not na(c1L) and low < c1L
     bullCISD := bearRunOpen
     bullMSS := structH
     bullKL := klHit(low, c1L, 1)
+    bullEMA := emaHit(low, c1L)
     bullTBS := tbsBull
 
 if bearState == 1
@@ -477,6 +506,7 @@ if bearState == 1
         bearExt := high
         bearCISD := bullRunOpen
         bearKL := bearKL or klHit(bearRH, high, -1)
+        bearEMA := bearEMA or emaHit(bearRH, high)
     bearTBS := bearTBS or tbsBear
     if close < bearRH
         bearState := 2
@@ -490,6 +520,7 @@ if bullState == 1
         bullExt := low
         bullCISD := bearRunOpen
         bullKL := bullKL or klHit(low, bullRL, 1)
+        bullEMA := bullEMA or emaHit(low, bullRL)
     bullTBS := bullTBS or tbsBull
     if close > bullRL
         bullState := 2
@@ -532,8 +563,8 @@ bullTP2  = bullT1 > bullTP1 + bullGap and bullT1 < bullTP3 - bullGap ? bullT1 : 
 bearRR   = bearStop > close and close > bearT2 ? (close - bearT2) / (bearStop - close) : 0.0
 bullRR   = bullStop < close and close < bullT2 ? (bullT2 - close) / (close - bullStop) : 0.0
 
-gateBear = bearState == 2 and canSignal and timeOk and (not klRequire or bearKL) and (not tbsRequire or bearTBS) and (not useBias or bias < 0) and bearRR >= minRR
-gateBull = bullState == 2 and canSignal and timeOk and (not klRequire or bullKL) and (not tbsRequire or bullTBS) and (not useBias or bias > 0) and bullRR >= minRR
+gateBear = bearState == 2 and canSignal and timeOk and (not klRequire or bearKL) and (not tbsRequire or bearTBS) and (not useBias or bias < 0) and emaOkBear and (not emaLv or bearEMA) and bearRR >= minRR
+gateBull = bullState == 2 and canSignal and timeOk and (not klRequire or bullKL) and (not tbsRequire or bullTBS) and (not useBias or bias > 0) and emaOkBull and (not emaLv or bullEMA) and bullRR >= minRR
 
 sigBear = false
 sigBull = false
@@ -568,16 +599,16 @@ if gateBull
 
 
 // ══════════════════════════════ ⑧ Drawing ══════════════════════════════
-crtTag(t, kl) =>
-    (crtShowType ? " T" + str.tostring(t) : "") + (kl ? " · KL" : "")
+crtTag(t, kl, em) =>
+    (crtShowType ? " T" + str.tostring(t) : "") + (kl ? " · KL" : "") + (em ? " · EMA" : "")
 
 if armBear
     if crtShowBox
-        bearBox := box.new(bearStart, bearRH, bar_index, bearRL, border_color = color.new(colBear, 40), border_width = 1, bgcolor = color.new(colBear, 92), text = "CRT ▼" + crtTag(bearType, bearKL), text_size = size.small, text_color = color.new(colBear, 10), text_halign = text.align_left, text_valign = text.align_top)
+        bearBox := box.new(bearStart, bearRH, bar_index, bearRL, border_color = color.new(colBear, 40), border_width = 1, bgcolor = color.new(colBear, 92), text = "CRT ▼" + crtTag(bearType, bearKL, bearEMA), text_size = size.small, text_color = color.new(colBear, 10), text_halign = text.align_left, text_valign = text.align_top)
     label.new(bearSweepBar, bearExt, "▼", color = na, style = label.style_label_down, textcolor = colBear, size = size.small)
 if armBull
     if crtShowBox
-        bullBox := box.new(bullStart, bullRH, bar_index, bullRL, border_color = color.new(colBull, 40), border_width = 1, bgcolor = color.new(colBull, 92), text = "CRT ▲" + crtTag(bullType, bullKL), text_size = size.small, text_color = color.new(colBull, 10), text_halign = text.align_left, text_valign = text.align_bottom)
+        bullBox := box.new(bullStart, bullRH, bar_index, bullRL, border_color = color.new(colBull, 40), border_width = 1, bgcolor = color.new(colBull, 92), text = "CRT ▲" + crtTag(bullType, bullKL, bullEMA), text_size = size.small, text_color = color.new(colBull, 10), text_halign = text.align_left, text_valign = text.align_bottom)
     label.new(bullSweepBar, bullExt, "▲", color = na, style = label.style_label_up, textcolor = colBull, size = size.small)
 if bearState == 2 and not na(bearBox)
     bearBox.set_right(bar_index)
@@ -750,7 +781,7 @@ tbPos = switch tablePos
     S_BOT_R => position.bottom_right
     S_BOT_L => position.bottom_left
     => position.top_right
-var tb = table.new(tbPos, 2, 8, bgcolor = color.new(#131722, 8), border_color = color.new(#2a2e39, 0), border_width = 1)
+var tb = table.new(tbPos, 2, 9, bgcolor = color.new(#131722, 8), border_color = color.new(#2a2e39, 0), border_width = 1)
 
 stateText(s) =>
     s == 0 ? "Waiting" : s == 1 ? "Sweep → wait close" : s == 2 ? "Armed" : "Done / Failed"
@@ -769,6 +800,7 @@ if showTable
     row(5, "Kill Zone", kzName, kzName == "—" ? color.gray : color.yellow)
     row(6, "Signals W/L", str.tostring(sWin) + " / " + str.tostring(sLoss) + (closedN > 0 ? "  (" + str.tostring(100 * sWin / closedN, "#") + "%)" : ""), color.white)
     row(7, "T1 Hit", sTotal > 0 ? str.tostring(100 * sT1 / sTotal, "#") + "%" : "—", color.white)
+    row(8, "EMA 48/380 4H · 1H", (emaT4 > 0 ? "Naik" : emaT4 < 0 ? "Turun" : "—") + " · " + (emaT1 > 0 ? "Naik" : emaT1 < 0 ? "Turun" : "—"), emaT4 > 0 ? colBull : emaT4 < 0 ? colBear : color.gray)
 
 alertcondition(sigBear, "CRT Bearish Signal", "SATTAM CRT: bearish entry")
 alertcondition(sigBull, "CRT Bullish Signal", "SATTAM CRT: bullish entry")
